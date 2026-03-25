@@ -30,27 +30,84 @@
 #define MAX_MESSAGE_SIZE 512
 
 /*
- * Mensajes de ejemplo para eventos deportivos
+ * Estructura para almacenar el contexto del partido
+ * Cada topic tiene sus propios equipos y mensajes
  */
-const char *sports_messages[] = {
-    "Gol de Equipo A al minuto 5",
-    "Saque de banda para Equipo A",
-    "Tarjeta amarilla al numero 7 de Equipo B",
-    "Cambio: jugador 10 entra por jugador 20 en Equipo A",
-    "Gol de Equipo B al minuto 23",
-    "Fuera de juego anulado",
-    "Tarjeta roja al numero 15 de Equipo A",
-    "Gol de Equipo A al minuto 45",
-    "Fin del primer tiempo",
-    "Inicia el segundo tiempo",
-    "Gol de Equipo B al minuto 67",
-    "Cambio: jugador 5 entra por jugador 3 en Equipo B",
-    "Empate 2-2 en el marcador",
-    "Ultimos minutos del partido",
-    "Fin del partido 3-2 para Equipo A"
+struct MatchContext {
+    const char *team1;
+    const char *team2;
 };
 
-#define NUM_MESSAGES (sizeof(sports_messages) / sizeof(sports_messages[0]))
+/*
+ * Mapeo de topics a contextos de partidos
+ * Asegura que cada topic tenga sus propios equipos
+ */
+struct MatchContext match_contexts[] = {
+    {"Barcelona", "Real Madrid"},      /* match_A_vs_B */
+    {"Manchester City", "Liverpool"},  /* match_C_vs_D */
+    {"PSG", "Bayern Munich"},          /* match_E_vs_F */
+    {"Juventus", "AC Milan"},          /* match_G_vs_H */
+};
+
+#define NUM_CONTEXTS (sizeof(match_contexts) / sizeof(match_contexts[0]))
+
+/*
+ * Plantillas de mensajes que se personalizan con el topic
+ */
+const char *message_templates[] = {
+    "Gol de %s al minuto 5",
+    "Saque de banda para %s",
+    "Tarjeta amarilla al numero 7 de %s",
+    "Cambio: jugador 10 entra por jugador 20 en %s",
+    "Gol de %s al minuto 23",
+    "Fuera de juego anulado",
+    "Tarjeta roja al numero 15 de %s",
+    "Gol de %s al minuto 45",
+    "Fin del primer tiempo",
+    "Inicia el segundo tiempo",
+    "Gol de %s al minuto 67",
+    "Cambio: jugador 5 entra por jugador 3 en %s",
+    "Empate 2-2 en el marcador",
+    "Ultimos minutos del partido",
+    "Fin del partido 3-2 para %s"
+};
+
+#define NUM_MESSAGES (sizeof(message_templates) / sizeof(message_templates[0]))
+
+/*
+ * get_match_context() - Obtiene los equipos basado en el topic
+ * Parametros:
+ *   topic: nombre del topic (ej: match_A_vs_B)
+ * Retorna: estructura MatchContext con los equipos correspondientes
+ */
+struct MatchContext get_match_context(const char *topic) {
+    if (strcmp(topic, "match_A_vs_B") == 0) return match_contexts[0];
+    if (strcmp(topic, "match_C_vs_D") == 0) return match_contexts[1];
+    if (strcmp(topic, "match_E_vs_F") == 0) return match_contexts[2];
+    if (strcmp(topic, "match_G_vs_H") == 0) return match_contexts[3];
+    
+    /* Por defecto, retornar el primer contexto */
+    return match_contexts[0];
+}
+
+/*
+ * generate_message() - Genera un mensaje personalizado para el topic
+ * Parametros:
+ *   buffer: buffer donde guardar el mensaje generado
+ *   size: tamaño del buffer
+ *   template: plantilla del mensaje
+ *   team: nombre del equipo a insertar (o NULL si no aplica)
+ * Retorna: void
+ */
+void generate_message(char *buffer, size_t size, const char *template, const char *team) {
+    if (strstr(template, "%s") != NULL) {
+        /* El mensaje tiene un placeholder %s para el equipo */
+        snprintf(buffer, size, template, team);
+    } else {
+        /* El mensaje no tiene placeholders */
+        snprintf(buffer, size, "%s", template);
+    }
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 5) {
@@ -116,15 +173,27 @@ int main(int argc, char *argv[]) {
     
     printf("[OK] Conectado al broker %s:%d\n\n", broker_ip, broker_port);
     
+    /* Obtener el contexto del partido (equipos) */
+    struct MatchContext context = get_match_context(topic);
+    printf("[INFO] Contexto del partido: %s vs %s\n\n", context.team1, context.team2);
+    
     /* Enviar mensajes al broker */
     printf("Enviando %lu mensajes...\n\n", NUM_MESSAGES);
     
     for (size_t i = 0; i < NUM_MESSAGES; i++) {
         memset(message_buffer, 0, sizeof(message_buffer));
         
+        char event_message[MAX_MESSAGE_SIZE];
+        memset(event_message, 0, sizeof(event_message));
+        
+        /* Generar mensaje personalizado con el equipo correspondiente */
+        /* Alternar entre equipo1 y equipo2 para que ambos tengan acciones */
+        const char *team = (i % 2 == 0) ? context.team1 : context.team2;
+        generate_message(event_message, sizeof(event_message), message_templates[i], team);
+        
         /* Construir mensaje en formato "PUBLISH|topic|mensaje" */
         snprintf(message_buffer, sizeof(message_buffer), "PUBLISH|%s|%s", 
-                 topic, sports_messages[i]);
+                 topic, event_message);
         
         /*
          * send() - Enviar datos al broker
@@ -138,7 +207,7 @@ int main(int argc, char *argv[]) {
         if (send(publisher_socket, message_buffer, strlen(message_buffer), 0) < 0) {
             fprintf(stderr, "[ERROR] No se pudo enviar mensaje %lu: %s\n", i + 1, strerror(errno));
         } else {
-            printf("[%s] Mensaje %lu enviado: %s\n", publisher_id, i + 1, sports_messages[i]);
+            printf("[%s] Mensaje %lu enviado: %s\n", publisher_id, i + 1, event_message);
         }
         
         /* Pequena pausa entre mensajes para simular eventos en vivo */

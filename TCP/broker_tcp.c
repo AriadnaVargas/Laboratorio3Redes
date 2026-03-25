@@ -1,19 +1,32 @@
 /*
- * TCP Pub-Sub Broker
+ * TCP Pub-Sub Broker (Versión Multi-threaded)
  * 
  * DESCRIPCION:
  * Servidor broker que implementa un modelo de publicacion-suscripcion usando TCP.
  * El broker recibe mensajes de publicadores y los redistribuye a los suscriptores
  * interesados en el tema correspondiente.
  * 
+ * CARACTERISTICAS:
+ * - Maneja múltiples publicadores concurrentemente usando threads POSIX (pthread)
+ * - Cada publisher se ejecuta en su propio thread
+ * - Usa mutex para proteger acceso a la lista de subscribers
+ * - Soporta topic-based routing (filtrado por tema)
+ * 
  * FUNCIONES SOCKET UTILIZADAS:
  * 1. socket() - Crea un socket TCP (SOCK_STREAM)
  * 2. bind() - Vincula el socket a una direccion IP y puerto
- * 3. listen() - Pone el socket en modo escucha para acepar conexiones
+ * 3. listen() - Pone el socket en modo escucha para aceptar conexiones
  * 4. accept() - Acepta una conexion entrante de un cliente
  * 5. recv() - Recibe datos del socket
  * 6. send() - Envía datos a través del socket
  * 7. close() - Cierra el socket
+ * 
+ * FUNCIONES PTHREAD UTILIZADAS:
+ * 1. pthread_create() - Crea un nuevo thread
+ * 2. pthread_join() - Espera a que un thread termine
+ * 3. pthread_mutex_init() - Inicializa un mutex
+ * 4. pthread_mutex_lock() - Adquiere un mutex
+ * 5. pthread_mutex_unlock() - Libera un mutex
  */
 
 #include <stdio.h>
@@ -24,6 +37,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <pthread.h>
 
 #define BROKER_PORT 9001
 #define MAX_MESSAGE_SIZE 512
@@ -37,9 +51,20 @@ typedef struct {
     char topic[100];
 } subscriber_t;
 
+/* Estructura para pasar parámetros al thread del publisher */
+typedef struct {
+    int socket;
+} publisher_args_t;
+
 /* Variables globales para gestionar suscriptores */
 subscriber_t subscribers[MAX_SUBSCRIBERS];
 int num_subscribers = 0;
+
+/*
+ * Mutex para proteger acceso a la lista de subscribers
+ * Necesario porque múltiples threads pueden acceder simultáneamente
+ */
+pthread_mutex_t subscribers_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /*
  * forward_message_to_subscribers()
@@ -49,9 +74,14 @@ int num_subscribers = 0;
  * Parametros:
  *   - topic: tema del mensaje
  *   - message: contenido del mensaje a reenviar
+ * 
+ * Nota: Esta función usa el mutex para evitar race conditions
  */
 void forward_message_to_subscribers(const char *topic, const char *message) {
     printf("[BROKER] Reenviando mensaje del tema '%s' a suscriptores\n", topic);
+    
+    /* Adquirir el mutex antes de acceder a subscribers */
+    pthread_mutex_lock(&subscribers_mutex);
     
     for (int i = 0; i < num_subscribers; i++) {
         if (strcmp(subscribers[i].topic, topic) == 0) {
@@ -65,37 +95,49 @@ void forward_message_to_subscribers(const char *topic, const char *message) {
             }
         }
     }
+    
+    /* Liberar el mutex */
+    pthread_mutex_unlock(&subscribers_mutex);
 }
 
 /*
  * handle_publisher()
- * Gestiona la conexion de un publicador.
+ * Gestiona la conexion de un publicador en un thread separado.
  * Recibe mensajes en formato "PUBLISH|topic|message" y los reenvía
  * a los suscriptores correspondientes.
  * 
  * Parametros:
- *   - publisher_socket: socket conectado del publicador
+ *   - arg: puntero a publisher_args_t que contiene el socket del publisher
+ * 
+ * Retorna: NULL (requerido para funciones thread de pthread)
  */
-void handle_publisher(int publisher_socket) {
+void *handle_publisher(void *arg) {
+    publisher_args_t *args = (publisher_args_t *)arg;
+    int publisher_socket = args->socket;
+    free(args); /* Liberar la estructura de argumentos */
+    
     char buffer[MAX_MESSAGE_SIZE];
     int bytes_received;
     
-    printf("[BROKER] Nuevo publicador conectado en socket %d\n", publisher_socket);
+    printf("[BROKER] Nuevo publicador en thread %lu, socket %d\n", pthread_self(), publisher_socket);
     
     while (1) {
         memset(buffer, 0, sizeof(buffer));
         bytes_received = recv(publisher_socket, buffer, sizeof(buffer) - 1, 0);
         
         if (bytes_received <= 0) {
-            printf("[BROKER] Publicador desconectado (socket %d)\n", publisher_socket);
+            printf("[BROKER] Publicador desconectado (socket %d, thread %lu)\n", 
+                   publisher_socket, pthread_self());
             break;
         }
         
         buffer[bytes_received] = '\0';
-        printf("[BROKER] Mensaje recibido: %s\n", buffer);
+        printf("[BROKER] [Thread %lu] Mensaje recibido: %s\n", pthread_self(), buffer);
         
         /* Parsear mensaje en formato "PUBLISH|topic|message" */
-        char *token = strtok(buffer, "|");
+        char buffer_copy[MAX_MESSAGE_SIZE];
+        strcpy(buffer_copy, buffer);
+        char *token = strtok(buffer_copy, "|");
         
         if (token != NULL && strcmp(token, "PUBLISH") == 0) {
             char topic[100] = {0};
@@ -120,57 +162,34 @@ void handle_publisher(int publisher_socket) {
     }
     
     close(publisher_socket);
+    return NULL;
 }
 
 /*
- * handle_subscriber()
- * Gestiona la conexion de un suscriptor.
- * El suscriptor envia un mensaje en formato "SUBSCRIBE|topic" y luego
- * permanece conectado recibiendo mensajes del broker.
+ * register_subscriber()
+ * Registra un nuevo suscriptor en la lista global.
+ * Usa mutex para evitar race conditions.
  * 
  * Parametros:
- *   - subscriber_socket: socket conectado del suscriptor
+ *   - socket: socket del suscriptor
+ *   - topic: tema al que se suscribe
+ * 
+ * Retorna: 1 si se registró exitosamente, 0 si la lista está llena
  */
-void handle_subscriber(int subscriber_socket) {
-    char buffer[MAX_MESSAGE_SIZE];
-    int bytes_received;
+int register_subscriber(int socket, const char *topic) {
+    pthread_mutex_lock(&subscribers_mutex);
     
-    printf("[BROKER] Nuevo suscriptor conectado en socket %d\n", subscriber_socket);
-    
-    /* Recibir mensaje de suscripcion */
-    memset(buffer, 0, sizeof(buffer));
-    bytes_received = recv(subscriber_socket, buffer, sizeof(buffer) - 1, 0);
-    
-    if (bytes_received <= 0) {
-        printf("[BROKER] Suscriptor desconectado antes de enviar suscripcion\n");
-        close(subscriber_socket);
-        return;
+    if (num_subscribers >= MAX_SUBSCRIBERS) {
+        pthread_mutex_unlock(&subscribers_mutex);
+        return 0;
     }
     
-    buffer[bytes_received] = '\0';
-    printf("[BROKER] Suscripcion recibida: %s\n", buffer);
+    subscribers[num_subscribers].socket = socket;
+    strcpy(subscribers[num_subscribers].topic, topic);
+    num_subscribers++;
     
-    /* Parsear mensaje en formato "SUBSCRIBE|topic" */
-    char *token = strtok(buffer, "|");
-    
-    if (token != NULL && strcmp(token, "SUBSCRIBE") == 0) {
-        token = strtok(NULL, "");
-        
-        if (token != NULL && num_subscribers < MAX_SUBSCRIBERS) {
-            subscribers[num_subscribers].socket = subscriber_socket;
-            strcpy(subscribers[num_subscribers].topic, token);
-            num_subscribers++;
-            
-            printf("[BROKER] Suscriptor registrado para tema '%s'\n", token);
-            
-            /* El suscriptor permanece conectado para recibir mensajes */
-            char ack[100];
-            snprintf(ack, sizeof(ack), "Suscrito al tema: %s\n", token);
-            send(subscriber_socket, ack, strlen(ack), 0);
-        }
-    } else {
-        close(subscriber_socket);
-    }
+    pthread_mutex_unlock(&subscribers_mutex);
+    return 1;
 }
 
 int main() {
@@ -178,7 +197,7 @@ int main() {
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_addr_len;
     
-    printf("===== TCP PUB-SUB BROKER =====\n");
+    printf("===== TCP PUB-SUB BROKER (Multi-threaded) =====\n");
     printf("Iniciando broker en puerto %d...\n", BROKER_PORT);
     
     /* 
@@ -235,7 +254,8 @@ int main() {
     }
     
     printf("[OK] Broker en escucha...\n");
-    printf("Esperando conexiones de publicadores y suscriptores...\n\n");
+    printf("Esperando conexiones de publicadores y suscriptores...\n");
+    printf("(Presiona Ctrl+C para detener el broker)\n\n");
     
     /* Loop principal: aceptar conexiones */
     while (1) {
@@ -272,7 +292,10 @@ int main() {
             initial_message[bytes] = '\0';
             
             if (strncmp(initial_message, "PUBLISH", 7) == 0) {
-                /* Es un publicador - procesamos el primer mensaje y luego entramos en loop */
+                /* 
+                 * Es un publicador - crear un thread para manejarlo
+                 * Esto permite que múltiples publicadores se ejecuten concurrentemente
+                 */
                 printf("[BROKER] Cliente identificado como PUBLICADOR\n");
                 
                 /* Procesar el primer mensaje */
@@ -294,11 +317,36 @@ int main() {
                     }
                 }
                 
-                /* Continuar recibiendo mensajes del publicador */
-                handle_publisher(client_socket);
+                /* 
+                 * pthread_create() - Crear un nuevo thread
+                 * Parametros:
+                 *   NULL: variable donde guardar el ID del thread (no usado)
+                 *   NULL: atributos del thread (NULL = atributos por defecto)
+                 *   handle_publisher: función que ejecutará el thread
+                 *   args: argumentos a pasar a la función
+                 * Retorna: 0 si exito, número de error si falla
+                 */
+                pthread_t publisher_thread;
+                publisher_args_t *args = malloc(sizeof(publisher_args_t));
+                if (args != NULL) {
+                    args->socket = client_socket;
+                    
+                    if (pthread_create(&publisher_thread, NULL, handle_publisher, args) == 0) {
+                        printf("[BROKER] Thread creado para publicador (ID: %lu)\n", publisher_thread);
+                        /* Detach el thread para que se limpie automáticamente */
+                        pthread_detach(publisher_thread);
+                    } else {
+                        fprintf(stderr, "[ERROR] No se pudo crear thread: %s\n", strerror(errno));
+                        free(args);
+                        close(client_socket);
+                    }
+                } else {
+                    fprintf(stderr, "[ERROR] No se pudo asignar memoria para argumentos del thread\n");
+                    close(client_socket);
+                }
                 
             } else if (strncmp(initial_message, "SUBSCRIBE", 9) == 0) {
-                /* Es un suscriptor */
+                /* Es un suscriptor - registrarlo en la lista global */
                 printf("[BROKER] Cliente identificado como SUSCRIPTOR\n");
                 
                 char msg_copy[MAX_MESSAGE_SIZE];
@@ -307,16 +355,24 @@ int main() {
                 if (token != NULL && strcmp(token, "SUBSCRIBE") == 0) {
                     token = strtok(NULL, "");
                     
-                    if (token != NULL && num_subscribers < MAX_SUBSCRIBERS) {
-                        subscribers[num_subscribers].socket = client_socket;
-                        strcpy(subscribers[num_subscribers].topic, token);
-                        num_subscribers++;
-                        
-                        printf("[BROKER] Suscriptor registrado para tema '%s'\n", token);
-                        
-                        char ack[100];
-                        snprintf(ack, sizeof(ack), "Suscrito al tema: %s\n", token);
-                        send(client_socket, ack, strlen(ack), 0);
+                    if (token != NULL) {
+                        if (register_subscriber(client_socket, token)) {
+                            printf("[BROKER] Suscriptor registrado para tema '%s'\n", token);
+                            
+                            char ack[100];
+                            snprintf(ack, sizeof(ack), "Suscrito al tema: %s\n", token);
+                            send(client_socket, ack, strlen(ack), 0);
+                            
+                            /* 
+                             * El suscriptor permanece conectado.
+                             * Espera a recibir mensajes en el socket.
+                             * Los mensajes son enviados por otros threads
+                             * que ejecutan handle_publisher()
+                             */
+                        } else {
+                            fprintf(stderr, "[ERROR] No se pudo registrar suscriptor (lista llena)\n");
+                            close(client_socket);
+                        }
                     }
                 }
             } else {

@@ -10,11 +10,12 @@ Sistema de publicación-suscripción (pub-sub) implementado en C que permite la 
 
 1. [Estructura del Proyecto](#estructura-del-proyecto)
 2. [Librerías y Funciones Socket Utilizadas](#librerías-y-funciones-socket-utilizadas)
-3. [TCP - Implementación](#tcp---implementación)
-4. [UDP - Implementación](#udp---implementación)
-5. [Compilación](#compilación)
-6. [Ejecución](#ejecución)
-7. [Protocolo de Comunicación](#protocolo-de-comunicación)
+3. [Concurrencia y Sincronización (POSIX Threads)](#concurrencia-y-sincronización-posix-threads)
+4. [TCP - Implementación](#tcp---implementación)
+5. [UDP - Implementación](#udp---implementación)
+6. [Compilación](#compilación)
+7. [Ejecución](#ejecución)
+8. [Protocolo de Comunicación](#protocolo-de-comunicación)
 
 ---
 
@@ -378,6 +379,107 @@ signal(SIGINT, signal_handler);  // Capturar Ctrl+C
 
 ---
 
+## Concurrencia y Sincronización (POSIX Threads)
+
+### Introducción a Threads
+
+El broker TCP utiliza **threads POSIX (pthread)** para manejar múltiples publishers simultáneamente. Sin threading, el broker procesaría publishers secuencialmente, causando que otros esperen.
+
+### Librería: **`<pthread.h>`** - POSIX Threads
+
+Proporciona funciones para crear y sincronizar threads en sistemas POSIX.
+
+#### Conceptos Clave:
+
+##### **Race Condition (Condición de Carrera)**
+Ocurre cuando múltiples threads acceden simultáneamente a datos compartidos sin sincronización. Ejemplo:
+```
+Thread 1: Lee num_subscribers = 5
+Thread 2: Lee num_subscribers = 5
+Thread 1: Escribe num_subscribers = 6
+Thread 2: Escribe num_subscribers = 6  ← ¡Valor incorrecto! Debería ser 7
+```
+
+##### **Mutex (Mutual Exclusion)**
+Mecanismo de sincronización que garantiza que solo un thread acceda a una sección crítica a la vez.
+
+#### Funciones Utilizadas:
+
+##### **`pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine)(void *), void *arg)`**
+```c
+pthread_t publisher_thread;
+publisher_args_t *args = malloc(sizeof(publisher_args_t));
+args->socket = client_socket;
+pthread_create(&publisher_thread, NULL, handle_publisher, args);
+```
+- **Propósito**: Crea un nuevo thread
+- **Parámetros**:
+  - `thread`: Puntero donde guardar el ID del thread creado
+  - `attr`: Atributos (NULL = atributos por defecto)
+  - `start_routine`: Función a ejecutar en el thread
+  - `arg`: Argumentos para la función (void *)
+- **Retorna**: 0 si éxito, número de error si falla
+- **Uso en Lab**: Crear un thread para cada publisher que se conecte
+
+##### **`pthread_detach(pthread_t thread)`**
+```c
+pthread_detach(publisher_thread);
+```
+- **Propósito**: Marca un thread para que se limpie automáticamente al terminar
+- **Alternativa**: `pthread_join()` requeriría esperar explícitamente
+- **Uso en Lab**: Permite que threads de publishers terminen sin bloquear el broker
+
+##### **`pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr)`**
+```c
+pthread_mutex_t subscribers_mutex = PTHREAD_MUTEX_INITIALIZER;
+```
+- **Propósito**: Inicializa un mutex
+- **En Lab**: Inicialización estática con `PTHREAD_MUTEX_INITIALIZER`
+
+##### **`pthread_mutex_lock(pthread_mutex_t *mutex)`**
+```c
+pthread_mutex_lock(&subscribers_mutex);
+// Sección crítica - solo este thread puede ejecutar
+```
+- **Propósito**: Adquiere el mutex (bloquea si otro thread lo tiene)
+- **Uso en Lab**: Antes de leer/modificar la lista de subscribers
+
+##### **`pthread_mutex_unlock(pthread_mutex_t *mutex)`**
+```c
+pthread_mutex_unlock(&subscribers_mutex);
+// Otros threads pueden ahora adquirir el mutex
+```
+- **Propósito**: Libera el mutex para que otros threads lo adquieran
+- **Uso en Lab**: Después de terminar lectura/modificación de subscribers
+
+#### Ejemplo de Sincronización en el Broker:
+
+```c
+// Función protegida por mutex
+void forward_message_to_subscribers(const char *topic, const char *message) {
+    pthread_mutex_lock(&subscribers_mutex);      // ADQUIRIR MUTEX
+    
+    // Sección crítica - acceso seguro a subscribers[]
+    for (int i = 0; i < num_subscribers; i++) {
+        if (strcmp(subscribers[i].topic, topic) == 0) {
+            send(subscribers[i].socket, message, strlen(message), 0);
+        }
+    }
+    
+    pthread_mutex_unlock(&subscribers_mutex);    // LIBERAR MUTEX
+}
+```
+
+### Compilación con Threading
+
+Para compilar código que usa pthread, usar flag `-pthread`:
+
+```bash
+gcc -Wall -Wextra -pthread -o broker_tcp broker_tcp.c
+```
+
+---
+
 ## TCP - Implementación
 
 ### Características de TCP
@@ -385,26 +487,41 @@ signal(SIGINT, signal_handler);  // Capturar Ctrl+C
 - ✅ **Ordenado**: Mensajes llegan en el mismo orden
 - ✅ **Orientado a conexión**: Establece conexión antes de enviar datos
 - ✅ **Control de flujo**: Ajusta velocidad de transmisión automáticamente
+- ✅ **Concurrente**: Maneja múltiples publicadores simultáneamente con threads POSIX
 
 ### Archivos TCP
 
-#### **`TCP/broker_tcp.c`**
+#### **`TCP/broker_tcp.c`** (Multi-threaded)
 ```
-Tamaño: ~12 KB
+Tamaño: ~14 KB
 Descripción: Servidor central que:
 - Escucha en puerto 9001
 - Acepta conexiones de publishers y subscribers
-- Mantiene lista de subscriptores por tema
-- Reenvía mensajes a subscribers interesados
+- Crea un thread POSIX para cada publisher
+- Mantiene lista protegida de subscriptores (con mutex)
+- Reenvía mensajes a subscribers interesados de forma concurrente
 ```
 
 **Funciones Socket Principales**:
 - `socket()`, `bind()`, `listen()`, `accept()`, `send()`, `recv()`, `close()`
 
+**Funciones POSIX Thread (pthread)**:
+- `pthread_create()` - Crea un nuevo thread para cada publisher
+- `pthread_mutex_lock()` - Protege acceso a lista de subscribers
+- `pthread_mutex_unlock()` - Libera el mutex
+- `pthread_detach()` - Permite que thread se limpie automáticamente
+
 **Protocolo**:
 - Broker identifica cliente según primer mensaje (PUBLISH o SUBSCRIBE)
 - Publishers: envían formato `PUBLISH|topic|message`
 - Subscribers: envían `SUBSCRIBE|topic` y reciben mensajes
+- Cada publisher se ejecuta en su propio thread para no bloquear otros
+
+**Ventajas del Threading**:
+- Múltiples publishers pueden enviar mensajes simultáneamente
+- No hay esperas bloqueantes entre publishers
+- Subscribers reciben mensajes en tiempo real de todos los publishers activos
+- Escalable para manejar muchos publishers y subscribers concurrentemente
 
 #### **`TCP/publisher_tcp.c`**
 ```
@@ -448,145 +565,6 @@ Descripción: Cliente suscriptor que:
 ./subscriber_tcp 127.0.0.1 9001 sub2 match_A_vs_B match_C_vs_D
 ```
 
----
-
-## UDP - Implementación
-
-### Características de UDP
-- ❌ **No confiable**: Mensajes pueden perderse
-- ❌ **Sin orden garantizado**: Pueden llegar desordenados
-- ✅ **Sin conexión**: Envía datagramas independientes
-- ✅ **Bajo overhead**: Más rápido que TCP
-
-*Nota: Implementación UDP pendiente*
-
----
-
-## Compilación
-
-### En Linux/Mac/Unix:
-
-```bash
-# TCP
-cd TCP
-gcc -o broker_tcp broker_tcp.c
-gcc -o publisher_tcp publisher_tcp.c
-gcc -o subscriber_tcp subscriber_tcp.c
-
-# UDP (cuando esté lista)
-cd ../UDP
-gcc -o broker_udp broker_udp.c
-gcc -o publisher_udp publisher_udp.c
-gcc -o subscriber_udp subscriber_udp.c
-```
-
-### Flags recomendados:
-```bash
-gcc -Wall -Wextra -o broker_tcp broker_tcp.c    # Con advertencias
-gcc -std=c99 -o broker_tcp broker_tcp.c         # Especificar estándar C99
-```
-
----
-
-## Ejecución
-
-### Caso de Prueba: 2 Publishers, 2 Subscribers
-
-**Terminal 1 - Broker:**
-```bash
-cd TCP
-./broker_tcp
-```
-
-**Terminal 2 - Subscriber 1 (match_A_vs_B):**
-```bash
-cd TCP
-./subscriber_tcp 127.0.0.1 9001 sub1 match_A_vs_B
-```
-
-**Terminal 3 - Subscriber 2 (match_C_vs_D):**
-```bash
-cd TCP
-./subscriber_tcp 127.0.0.1 9001 sub2 match_C_vs_D
-```
-
-**Terminal 4 - Publisher 1 (match_A_vs_B):**
-```bash
-cd TCP
-./publisher_tcp 127.0.0.1 9001 pub1 match_A_vs_B
-```
-
-**Terminal 5 - Publisher 2 (match_C_vs_D):**
-```bash
-cd TCP
-./publisher_tcp 127.0.0.1 9001 pub2 match_C_vs_D
-```
-
-### Resultado Esperado:
-```
-✅ sub1 recibe 15 mensajes de pub1 (match_A_vs_B)
-✅ sub2 recibe 15 mensajes de pub2 (match_C_vs_D)
-✅ sub1 NO recibe mensajes de pub2
-✅ sub2 NO recibe mensajes de pub1
-✅ Todos los mensajes llegan en orden correcto
-```
-
----
-
-## Protocolo de Comunicación
-
-### Formato de Mensajes
-
-#### Publicador → Broker (TCP):
-```
-PUBLISH|<topic>|<mensaje>
-
-Ejemplo:
-PUBLISH|match_A_vs_B|Gol de Equipo A al minuto 32
-```
-
-#### Suscriptor → Broker (TCP):
-```
-SUBSCRIBE|<topic>
-
-Ejemplo:
-SUBSCRIBE|match_A_vs_B
-```
-
-#### Broker → Suscriptor (TCP):
-```
-[<topic>] <mensaje>
-
-Ejemplo:
-[match_A_vs_B] Gol de Equipo A al minuto 32
-```
-
----
-
-## Notas Importantes
-
-### TCP vs UDP (En este lab)
-| Aspecto | TCP | UDP |
-|--------|-----|-----|
-| **Confiabilidad** | ✅ Garantizada | ❌ No garantizada |
-| **Orden** | ✅ Garantizado | ❌ Sin garantía |
-| **Orientación** | Conexión | Sin conexión |
-| **Overhead** | Mayor | Menor |
-| **Velocidad** | Más lento | Más rápido |
-| **Ideal para** | Chat, Email | Streaming, Gaming |
-
-### Limitaciones Actuales
-- ⚠️ Sin threads: Broker TCP procesa conexiones secuencialmente
-- ⚠️ Max 100 subscribers simultáneos (limite configurable)
-- ⚠️ Max 512 bytes por mensaje (tamaño configurable)
-- ⚠️ Sin persistencia de mensajes
-
-### Mejoras Futuras
-- [ ] Usar pthreads o select()/poll() para multiplexing
-- [ ] Aumentar límites dinámicamente
-- [ ] Agregar persistencia con base de datos
-- [ ] Implementar autenticación y autorización
-- [ ] Comparación detallada TCP vs UDP con Wireshark
 
 ---
 
@@ -594,7 +572,6 @@ Ejemplo:
 
 ### Documentación de Socket API
 - POSIX Socket API: https://pubs.opengroup.org/onlinepubs/9699919799/
-- Linux man pages: `man socket`, `man send`, `man bind`, etc.
 - Beej's Guide to Network Programming: https://beej.us/guide/bgnet/
 
 ### Estándares
