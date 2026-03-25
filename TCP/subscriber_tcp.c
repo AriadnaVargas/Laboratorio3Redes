@@ -42,6 +42,7 @@ volatile int keep_running = 1;
  * Permite terminar la suscripcion de forma controlada
  */
 void signal_handler(int sig) {
+    (void)sig;  /* Suprimir advertencia de parámetro no utilizado */
     printf("\n[SUBSCRIBER] Recibido Ctrl+C, desconectando...\n");
     keep_running = 0;
 }
