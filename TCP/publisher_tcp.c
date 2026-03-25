@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
     /* Enviar mensajes al broker */
     printf("Enviando %lu mensajes...\n\n", NUM_MESSAGES);
     
-    for (int i = 0; i < NUM_MESSAGES; i++) {
+    for (size_t i = 0; i < NUM_MESSAGES; i++) {
         memset(message_buffer, 0, sizeof(message_buffer));
         
         /* Construir mensaje en formato "PUBLISH|topic|mensaje" */
@@ -136,9 +136,9 @@ int main(int argc, char *argv[]) {
          * Retorna: cantidad de bytes enviados o -1 si hay error
          */
         if (send(publisher_socket, message_buffer, strlen(message_buffer), 0) < 0) {
-            fprintf(stderr, "[ERROR] No se pudo enviar mensaje %d: %s\n", i + 1, strerror(errno));
+            fprintf(stderr, "[ERROR] No se pudo enviar mensaje %lu: %s\n", i + 1, strerror(errno));
         } else {
-            printf("[%s] Mensaje %d enviado: %s\n", publisher_id, i + 1, sports_messages[i]);
+            printf("[%s] Mensaje %lu enviado: %s\n", publisher_id, i + 1, sports_messages[i]);
         }
         
         /* Pequena pausa entre mensajes para simular eventos en vivo */
