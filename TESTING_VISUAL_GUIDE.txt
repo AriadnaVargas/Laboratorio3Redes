@@ -1,0 +1,94 @@
+TCP PUB-SUB SYSTEM - TESTING GUIDE
+===================================
+
+QUICK START (5 MINUTES)
+=======================
+
+1. Open WSL2:
+   wsl
+
+2. Go to project:
+   cd TCP
+
+3. Compile:
+   gcc -Wall -Wextra -o broker_tcp broker_tcp.c
+   gcc -Wall -Wextra -o publisher_tcp publisher_tcp.c
+   gcc -Wall -Wextra -o subscriber_tcp subscriber_tcp.c
+
+4. Open 5 terminal windows and run:
+
+   WINDOW 1 (Broker):
+   ./broker_tcp
+
+   WINDOW 2 (Subscriber 1):
+   ./subscriber_tcp 127.0.0.1 9001 sub1 match_A_vs_B
+
+   WINDOW 3 (Subscriber 2):
+   ./subscriber_tcp 127.0.0.1 9001 sub2 match_C_vs_D
+
+   WINDOW 4 (Publisher 1):
+   ./publisher_tcp 127.0.0.1 9001 pub1 match_A_vs_B
+
+   WINDOW 5 (Publisher 2):
+   ./publisher_tcp 127.0.0.1 9001 pub2 match_C_vs_D
+
+
+EXPECTED RESULTS
+================
+
+✓ Sub1 receives 15 messages from Pub1
+✓ Sub2 receives 15 messages from Pub2
+✓ Sub1 does NOT get Pub2's messages
+✓ Sub2 does NOT get Pub1's messages
+✓ Messages in correct order
+✓ No duplicate messages
+
+
+WHAT YOU'LL SEE
+===============
+
+Broker output:
+  [OK] Broker en escucha...
+  [BROKER] Conexion aceptada de 127.0.0.1:12345
+  [BROKER] Cliente identificado como SUSCRIPTOR
+  [BROKER] Reenviando mensaje...
+
+Subscriber output:
+  [sub1] [match_A_vs_B] Gol de Equipo A al minuto 5
+  [sub1] [match_A_vs_B] Saque de banda para Equipo A
+  (15 messages total)
+
+Publisher output:
+  [pub1] Mensaje 1 enviado: Gol de Equipo A al minuto 5
+  [pub1] Mensaje 2 enviado: Saque de banda para Equipo A
+  (15 messages)
+  [OK] Todos los 15 mensajes fueron enviados
+  [OK] Conexion cerrada
+
+
+CLEANUP
+=======
+
+Ctrl+C in each window to exit
+$ rm broker_tcp publisher_tcp subscriber_tcp
+
+
+TROUBLESHOOTING
+===============
+
+Address already in use:
+  Wait 30 seconds or: sudo lsof -i :9001
+
+Connection refused:
+  Start broker first (Window 1)
+
+No messages received:
+  Check topic names match exactly (case-sensitive!)
+
+
+DOCUMENTATION
+==============
+
+README.md - Socket API documentation (9 libraries)
+TESTING.md - Detailed test cases (4 scenarios)
+QUICKSTART.md - Command reference
