@@ -177,8 +177,6 @@ int main() {
     int server_socket, client_socket;
     struct sockaddr_in server_addr, client_addr;
     socklen_t client_addr_len;
-    fd_set readfds;
-    int max_fd;
     
     printf("===== TCP PUB-SUB BROKER =====\n");
     printf("Iniciando broker en puerto %d...\n", BROKER_PORT);
