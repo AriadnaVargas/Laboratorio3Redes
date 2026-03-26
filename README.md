@@ -11,11 +11,8 @@ Sistema de publicación-suscripción (pub-sub) implementado en C que permite la 
 1. [Estructura del Proyecto](#estructura-del-proyecto)
 2. [Librerías y Funciones Socket Utilizadas](#librerías-y-funciones-socket-utilizadas)
 3. [Concurrencia y Sincronización (POSIX Threads)](#concurrencia-y-sincronización-posix-threads)
-4. [TCP - Implementación](#tcp---implementación)
-5. [UDP - Implementación](#udp---implementación)
-6. [Compilación](#compilación)
-7. [Ejecución](#ejecución)
-8. [Protocolo de Comunicación](#protocolo-de-comunicación)
+4. [Ejecución](#ejecución)
+
 
 ---
 
@@ -391,15 +388,6 @@ Proporciona funciones para crear y sincronizar threads en sistemas POSIX.
 
 #### Conceptos Clave:
 
-##### **Race Condition (Condición de Carrera)**
-Ocurre cuando múltiples threads acceden simultáneamente a datos compartidos sin sincronización. Ejemplo:
-```
-Thread 1: Lee num_subscribers = 5
-Thread 2: Lee num_subscribers = 5
-Thread 1: Escribe num_subscribers = 6
-Thread 2: Escribe num_subscribers = 6  ← ¡Valor incorrecto! Debería ser 7
-```
-
 ##### **Mutex (Mutual Exclusion)**
 Mecanismo de sincronización que garantiza que solo un thread acceda a una sección crítica a la vez.
 
@@ -470,100 +458,9 @@ void forward_message_to_subscribers(const char *topic, const char *message) {
 }
 ```
 
-### Compilación con Threading
-
-Para compilar código que usa pthread, usar flag `-pthread`:
-
-```bash
-gcc -Wall -Wextra -pthread -o broker_tcp broker_tcp.c
-```
-
 ---
 
-## TCP - Implementación
-
-### Características de TCP
-- ✅ **Confiable**: Garantiza entrega de datos
-- ✅ **Ordenado**: Mensajes llegan en el mismo orden
-- ✅ **Orientado a conexión**: Establece conexión antes de enviar datos
-- ✅ **Control de flujo**: Ajusta velocidad de transmisión automáticamente
-- ✅ **Concurrente**: Maneja múltiples publicadores simultáneamente con threads POSIX
-
-### Archivos TCP
-
-#### **`TCP/broker_tcp.c`** (Multi-threaded)
-```
-Tamaño: ~14 KB
-Descripción: Servidor central que:
-- Escucha en puerto 9001
-- Acepta conexiones de publishers y subscribers
-- Crea un thread POSIX para cada publisher
-- Mantiene lista protegida de subscriptores (con mutex)
-- Reenvía mensajes a subscribers interesados de forma concurrente
-```
-
-**Funciones Socket Principales**:
-- `socket()`, `bind()`, `listen()`, `accept()`, `send()`, `recv()`, `close()`
-
-**Funciones POSIX Thread (pthread)**:
-- `pthread_create()` - Crea un nuevo thread para cada publisher
-- `pthread_mutex_lock()` - Protege acceso a lista de subscribers
-- `pthread_mutex_unlock()` - Libera el mutex
-- `pthread_detach()` - Permite que thread se limpie automáticamente
-
-**Protocolo**:
-- Broker identifica cliente según primer mensaje (PUBLISH o SUBSCRIBE)
-- Publishers: envían formato `PUBLISH|topic|message`
-- Subscribers: envían `SUBSCRIBE|topic` y reciben mensajes
-- Cada publisher se ejecuta en su propio thread para no bloquear otros
-
-**Ventajas del Threading**:
-- Múltiples publishers pueden enviar mensajes simultáneamente
-- No hay esperas bloqueantes entre publishers
-- Subscribers reciben mensajes en tiempo real de todos los publishers activos
-- Escalable para manejar muchos publishers y subscribers concurrentemente
-
-#### **`TCP/publisher_tcp.c`**
-```
-Tamaño: ~5.4 KB
-Descripción: Cliente publicador que:
-- Se conecta al broker en 127.0.0.1:9001
-- Envía 15 mensajes deportivos (> 10 requeridos)
-- Espera 1 segundo entre mensajes
-- Se desconecta después de enviar todos
-```
-
-**Funciones Socket Principales**:
-- `socket()`, `connect()`, `send()`, `close()`
-
-**Uso**:
-```bash
-./publisher_tcp <broker_ip> <broker_port> <publisher_id> <topic>
-./publisher_tcp 127.0.0.1 9001 pub1 match_A_vs_B
-```
-
-#### **`TCP/subscriber_tcp.c`**
-```
-Tamaño: ~6.7 KB
-Descripción: Cliente suscriptor que:
-- Se conecta al broker
-- Se suscribe a 1 o más temas
-- Recibe todos los mensajes de esos temas
-- Permanece conectado hasta Ctrl+C
-```
-
-**Funciones Socket Principales**:
-- `socket()`, `connect()`, `send()`, `recv()`, `close()`
-
-**Funciones POSIX**:
-- `signal()` para manejar Ctrl+C
-
-**Uso**:
-```bash
-./subscriber_tcp <broker_ip> <broker_port> <subscriber_id> <topic1> [topic2] ...
-./subscriber_tcp 127.0.0.1 9001 sub1 match_A_vs_B
-./subscriber_tcp 127.0.0.1 9001 sub2 match_A_vs_B match_C_vs_D
-```
+## Ejecución
 
 
 ---
