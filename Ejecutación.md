@@ -22,7 +22,7 @@ Esta guía te explica paso a paso cómo compilar y ejecutar el sistema **Publica
 
 ```bash
 wsl
-
+```
 ### 2. Ir a la carpeta del proyecto
 ```bash
 cd /mnt/c/Users/ariad/OneDrive\ -\ Universidad\ de\ los\ andes/2026/2026-1/Redes/Labs/Laboratorio3Redes/TCP
