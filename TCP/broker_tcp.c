@@ -41,6 +41,7 @@
 
 #define BROKER_PORT 9001
 #define MAX_MESSAGE_SIZE 512
+#define MAX_BUFFER_SIZE 1024
 #define MAX_SUBSCRIBERS 100
 #define MAX_TOPICS 20
 #define BACKLOG 5
@@ -85,7 +86,7 @@ void forward_message_to_subscribers(const char *topic, const char *message) {
     
     for (int i = 0; i < num_subscribers; i++) {
         if (strcmp(subscribers[i].topic, topic) == 0) {
-            char full_message[MAX_MESSAGE_SIZE];
+            char full_message[MAX_BUFFER_SIZE];
             snprintf(full_message, sizeof(full_message), "[%s] %s", topic, message);
             
             if (send(subscribers[i].socket, full_message, strlen(full_message), 0) < 0) {

@@ -28,6 +28,8 @@
 #include <errno.h>
 
 #define MAX_MESSAGE_SIZE 512
+#define MAX_EVENT_MESSAGE 256
+#define MAX_BUFFER_SIZE 1024
 
 /*
  * Estructura para almacenar el contexto del partido
@@ -123,7 +125,7 @@ int main(int argc, char *argv[]) {
     
     int publisher_socket;
     struct sockaddr_in broker_addr;
-    char message_buffer[MAX_MESSAGE_SIZE];
+    char message_buffer[MAX_BUFFER_SIZE];
     
     printf("===== TCP PUB-SUB PUBLISHER =====\n");
     printf("Publicador ID: %s\n", publisher_id);
@@ -183,7 +185,7 @@ int main(int argc, char *argv[]) {
     for (size_t i = 0; i < NUM_MESSAGES; i++) {
         memset(message_buffer, 0, sizeof(message_buffer));
         
-        char event_message[MAX_MESSAGE_SIZE];
+        char event_message[MAX_EVENT_MESSAGE];
         memset(event_message, 0, sizeof(event_message));
         
         /* Generar mensaje personalizado con el equipo correspondiente */
