@@ -25,7 +25,7 @@ wsl
 ```
 ### 2. Ir a la carpeta del proyecto
 ```bash
-cd /mnt/c/Users/ariad/OneDrive\ -\ Universidad\ de\ los\ andes/2026/2026-1/Redes/Labs/Laboratorio3Redes/TCP
+cd ../Laboratorio3Redes/TCP
 ```
 
 ### 3. Compiple
