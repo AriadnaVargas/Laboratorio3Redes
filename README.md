@@ -477,7 +477,7 @@ wsl
 cd ../Laboratorio3Redes/TCP
 ```
 
-### 3. Compiple
+### 3. Compile
 ```bash
 gcc -Wall -Wextra -pthread -o broker_tcp broker_tcp.c
 gcc -Wall -Wextra -o publisher_tcp publisher_tcp.c
