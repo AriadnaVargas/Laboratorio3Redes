@@ -1,100 +1,167 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <netdb.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <ctype.h>
+#include <stdlib.h>
 
-int main () {
-    //como se explica en el libro, el serverport se escogió arbitrariamente
-    int serverPort = 12000;
+/**
+ * publisher_udp.c
+ * Este programa representa al publisher del sistema pub-sub por UDP.
+ * Su trabajo es generar eventos de un partido especifico y enviarlos
+ * al broker con el formato PUBLISH|topic|contenido.
+ *
+ * Secuencia de ejecucion del sistema:
+ * 1. Primero se ejecuta el broker.
+ * 2. Luego se ejecutan los subscribers para que se suscriban a topics.
+ * 3. Finalmente se ejecutan los publishers para empezar a publicar eventos.
+ */
 
-    /**
-     * llamado a la función clientSocjet del sistema (<sys/socket.h>)
-     *  AF_INET declara que la red está usando IPv4
-     * SOCK_DGRAM es el tipo de socket, indica que es un socket UDP
-     * 0 indica que se está utilizando el protocolo por defecto que corresponde a AF_INET y SOCK_DGRAM
-     * Quiere decir que no estamos definiendo un protocolo especîfico (nos lo da el s/o)
-    **/
-    int serverSocket = socket(AF_INET, SOCK_DGRAM, 0);
+#define MAX_TOPIC_SIZE 100
+#define MAX_MESSAGE_SIZE 1200
+#define MAX_EVENTS 10
+#define MAX_MATCHES 20
 
-    //Crear la direccion local del servidor para bind().
-    struct sockaddr_in serverAddr;
+//construir el topic del partido con el formato match_X_vs_Y
+static void build_match_topic(int match_number, char *topic, size_t topic_size) {
+    int team_one = (2 * match_number) - 1;
+    int team_two = 2 * match_number;
+    snprintf(topic, topic_size, "match_%d_vs_%d", team_one, team_two);
+}
 
-    //inicializar la estructura, el tercer parametro es el numero de bytes para llenar
-    //para evitar basura en memoria
-    memset(&serverAddr, 0, sizeof(serverAddr));
+//generar mensajes de ejemplo para simular eventos del partido
+static void build_match_event(int event_number, int team_one, int team_two,
+                              char *event, size_t event_size) {
+    switch (event_number) {
+        case 0:
+            snprintf(event, event_size,
+                     "Inicio del partido entre equipo %d y equipo %d",
+                     team_one, team_two);
+            break;
+        case 1:
+            snprintf(event, event_size,
+                     "Minuto 12: llegada peligrosa del equipo %d",
+                     team_one);
+            break;
+        case 2:
+            snprintf(event, event_size,
+                     "Minuto 18: atajada clave frente al equipo %d",
+                     team_two);
+            break;
+        case 3:
+            snprintf(event, event_size,
+                     "Minuto 27: tiro de esquina para el equipo %d",
+                     team_one);
+            break;
+        case 4:
+            snprintf(event, event_size,
+                     "Minuto 34: tarjeta amarilla para el equipo %d",
+                     team_two);
+            break;
+        case 5:
+            snprintf(event, event_size,
+                     "Minuto 45: termina el primer tiempo %d vs %d",
+                     team_one, team_two);
+            break;
+        case 6:
+            snprintf(event, event_size,
+                     "Minuto 52: gol del equipo %d",
+                     team_one);
+            break;
+        case 7:
+            snprintf(event, event_size,
+                     "Minuto 67: empate del equipo %d",
+                     team_two);
+            break;
+        case 8:
+            snprintf(event, event_size,
+                     "Minuto 81: cambio tactico en el equipo %d",
+                     team_one);
+            break;
+        default:
+            snprintf(event, event_size,
+                     "Final del partido entre equipo %d y equipo %d",
+                     team_one, team_two);
+            break;
+    }
+}
 
-    //dice que el tipo de direccion (sin_family) es IPv$(AF_INET)
-    serverAddr.sin_family = AF_INET;
-
-    /**Guardar el puerto del servidor
-     * serverPort en este caso es 12000
-     * sin_port espera el puerto en formato de red?????
-     * htons (host a network short) convierte de formato del host al formato de red
-     * Es decir, convierte un enter poqueño a bytes de red
-     * Se hace porque las máquinas pueden guardar numeros en distinto orden interno pero en red se usa un formato estandar
-    **/
-    serverAddr.sin_port = htons(serverPort);
-
-    /**
-     * Guardar al IP del servidor
-     * sin_addr es el campo de dirección IP
-     * INADDR_ANY significa que acepta paquetes dirigidos a cualquiera de las direcciones IP de la máquina
-     */
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-
-
-    /** Asociar el serverSocket a una direccion local y un puerto. Si no se hace, nadie sabe en qué puerto recibir mensajes.
-     * serverAddr es la dirección local que se quere asignar al socket (la estructura creada antes)
-     * Se hace un cast con struct sockaddr * (es lo que espera bind())
-     * sizeof(serverAddr) indica cuantos bytes ocupa la dirección en memoria
-     */
-    bind(serverSocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr));
-
-    printf("The server is ready to receive");
-
-
-    while (1){
-
-        char mensaje[2048];
-        //se guarda el mensaje que llega desde el cliente. 
-        char mensajeModificado[2048];
-
-        //una variable para guardar el tamaño de la dirección del servidor. 
-        //socklen_t es un tipo especail para tamaños de direcciones de sockets
-        //para poder devolver la dirección de quien lo envió
-        socklen_t serverLen = sizeof(serverAddr);
-
-        /** Recibir un paquete UDP
-         * Se espera a que llegue un mensaje al socket, guarda el contenido en mnesaje, guarda la dirección origen en serverAddr
-         * Devuelve cuantos bytes llegaron.
-         * serverSocket es el socket del cual se recibe
-         * mensaje es donde se guardan los datos recibidos
-         * sizeof(mensaje)-1 es el máximo de bytes para guardar. Se deja un byte libre para el "\0"
-         * 0 indica que no hay flags
-         * serverAddr es la direccion del emisor (se castea con (struct sockaddr *))
-         * &serverLen es el tamaño de la estructura dirección
-         * Es importante recalcar que recvfrom puede cambiar este tamaño
-         * n es entonces el numero de bytes que se recibieron. Si hubo un fallo, n=-1
-         */
-        int n = recvfrom(serverSocket, mensaje, sizeof(mensaje) -1, 0, (struct sockaddr *)&serverAddr, &serverLen);
-        //en c los strings terminan con '\0'. Hay que agregarlo.
-        mensaje[n] = '\0';
-
-        //cambiar el mensaje a upper case
-        int i;
-        for (i=0; mensaje[i] != '\0'; i++){
-            mensajeModificado[i] = toupper((unsigned char)mensaje[i]);
-        }
-        //en c los strings terminan con '\0'. Hay que agregarlo.
-        mensajeModificado[i] = '\0';
-
-
-        sendto(serverSocket, mensajeModificado, strlen(mensajeModificado), 0, (struct sockaddr *)&serverAddr, serverLen);
+int main(int argc, char *argv[]) {
+    //el publisher recibe ip, puerto, nombre y numero de partido
+    if (argc != 5) {
+        printf("Uso: %s <broker_ip> <broker_port> <publisher_name> <match_number>\n", argv[0]);
+        return 1;
     }
 
+    //guardar los argumentos en variables mas faciles de manejar
+    char *serverName = argv[1];
+    int serverPort = atoi(argv[2]);
+    char *publisherName = argv[3];
+    int matchNumber = atoi(argv[4]);
+
+    //validar que el numero de partido este dentro del rango permitido
+    if (matchNumber < 1 || matchNumber > MAX_MATCHES) {
+        printf("match_number debe estar entre 1 y %d\n", MAX_MATCHES);
+        return 1;
+    }
+
+    /**
+     * socket() crea el socket UDP del publisher.
+     * Este socket se usa para enviar datagramas al broker.
+     * No mantiene una conexion continua como en TCP.
+     */
+    int clientSocket = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (clientSocket < 0) {
+        perror("Error al crear el socket del publisher");
+        return 1;
+    }
+
+    //direccion del broker a donde se enviaran las publicaciones
+    struct sockaddr_in serverAddr;
+    //inicializar en cero para evitar basura en memoria
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    //indicar que la direccion es IPv4
+    serverAddr.sin_family = AF_INET;
+    //guardar el puerto del broker en formato de red
+    serverAddr.sin_port = htons(serverPort);
+    //convertir la ip del broker de texto a formato binario
+    serverAddr.sin_addr.s_addr = inet_addr(serverName);
+
+    //topic del partido, mensaje completo a enviar y texto del evento
+    char topic[MAX_TOPIC_SIZE];
+    char message[MAX_MESSAGE_SIZE];
+    char event[1024];
+
+    //calcular los equipos a partir del numero del partido
+    int team_one = (2 * matchNumber) - 1;
+    int team_two = 2 * matchNumber;
+
+    //construir el topic automaticamente usando el numero de partido
+    build_match_topic(matchNumber, topic, sizeof(topic));
+
+    for (int i = 0; i < MAX_EVENTS; i++) {
+        //generar el evento y armar el mensaje en formato PUBLISH|topic|contenido
+        build_match_event(i, team_one, team_two, event, sizeof(event));
+        snprintf(message, sizeof(message), "PUBLISH|%s|%s", topic, event);
+
+        //enviar la publicacion al broker
+        int sent = sendto(clientSocket, message, strlen(message), 0,
+                          (struct sockaddr *)&serverAddr, sizeof(serverAddr));
+
+        if (sent < 0) {
+            perror("Error al enviar publicacion");
+        } else {
+            //mostrar en consola que evento fue enviado correctamente
+            printf("[%s] Mensaje %d enviado: %s\n", publisherName, i + 1, event);
+        }
+
+        //esperar un segundo entre eventos para simular tiempo real
+        sleep(1);
+    }
+
+    //cerrar el socket cuando el publisher termina de enviar todos sus eventos
+    close(clientSocket);
     return 0;
 }
