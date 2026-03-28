@@ -139,16 +139,27 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     
-    printf("[OK] Conectado al broker %s:%d\n\n", broker_ip, broker_port);
-    
-    /* Suscribirse a todos los partidos especificados */
-    printf("Suscribiendo a partidos...\n\n");
-    
-    for (int i = 0; i < num_partidos; i++) {
-        memset(message_buffer, 0, sizeof(message_buffer));
-        
-        /* Construir mensaje de suscripcion en formato "SUBSCRIBE|topic" */
-        snprintf(message_buffer, sizeof(message_buffer), "SUBSCRIBE|%s", topics[i]);
+     printf("[OK] Conectado al broker %s:%d\n\n", broker_ip, broker_port);
+     
+     /* Enviar mensaje de REGISTRO con nombre de suscriptor y cantidad de tópicos */
+     printf("Enviando registro al broker...\n");
+     memset(message_buffer, 0, sizeof(message_buffer));
+     snprintf(message_buffer, sizeof(message_buffer), "REGISTER|%s|%d", subscriber_id, num_partidos);
+     
+     if (send(subscriber_socket, message_buffer, strlen(message_buffer), 0) < 0) {
+         fprintf(stderr, "[ERROR] No se pudo enviar registro al broker: %s\n", strerror(errno));
+     } else {
+         printf("[OK] Registro enviado: %s\n\n", message_buffer);
+     }
+     
+     /* Suscribirse a todos los partidos especificados */
+     printf("Suscribiendo a partidos...\n\n");
+     
+     for (int i = 0; i < num_partidos; i++) {
+         memset(message_buffer, 0, sizeof(message_buffer));
+         
+         /* Construir mensaje de suscripcion en formato "SUBSCRIBE|topic" */
+         snprintf(message_buffer, sizeof(message_buffer), "SUBSCRIBE|%s", topics[i]);
         
         /*
          * send() - Enviar datos al broker
