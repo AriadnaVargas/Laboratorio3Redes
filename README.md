@@ -503,19 +503,13 @@ gcc -Wall -Wextra -o subscriber_tcp subscriber_tcp.c
 ```bash
 ./broker_tcp
 ```
-**Salida esperada:**
-```
-[Broker] Escuchando en puerto 9001...
-[Broker] Nueva conexión de subscriber sub1 (127.0.0.1:xxxxx)
-[Broker] Nueva conexión de publisher pub1 (127.0.0.1:xxxxx)
-...
-```
 
 ---
 
 #### Terminal 2: Subscriber (Recibe de i partidos)
 ```bash
 ./subscriber_tcp 127.0.0.1 9001 sub1 i
+./subscriber_tcp 127.0.0.1 9001 sub2 i
 ```
 
 **Donde `i` es la cantidad de partidos a los que se suscribe:**
@@ -529,9 +523,6 @@ gcc -Wall -Wextra -o subscriber_tcp subscriber_tcp.c
 [Subscriber sub1] Suscrito a topic: match_1_vs_2
 [Subscriber sub1] Suscrito a topic: match_3_vs_4
 [Subscriber sub1] Suscrito a topic: match_5_vs_6
-[Subscriber sub1] Mensaje de match_1_vs_2: ¡GOL! Equipo 1 abre el marcador...
-[Subscriber sub1] Mensaje de match_3_vs_4: Tarjeta amarilla para equipo 3...
-...
 ```
 
 ---
@@ -557,6 +548,11 @@ Publica en: `match_3_vs_4` (equipos 3 vs 4)
 ./publisher_tcp 127.0.0.1 9001 pub3 3
 ```
 Publica en: `match_5_vs_6` (equipos 5 vs 6)
+**En general:**
+```bash
+./publisher_tcp 127.0.0.1 9001 pubi i
+```
+Donde i es un numero entero
 
 **Salida esperada de cada publisher:**
 ```
@@ -607,11 +603,17 @@ Los mensajes de diferentes matches aparecen **intercalados en tiempo real** seg�
 
 #### Para Subscribers
 - **Formato**: `./subscriber_tcp <IP> <PUERTO> <NOMBRE> <NUM_MATCHES>`
+- **IP**: 127.0.0.1
+- **PUERTO**: 9001
+- **NOMBRE**: nombre del subscriptor de la forma subj donde j=1,2,...
 - **NUM_MATCHES**: Número de matches a los que suscribirse (1-20)
 - **Tópicos generados**: `match_1_vs_2`, `match_3_vs_4`, `match_5_vs_6`, ...
 
 #### Para Publishers
 - **Formato**: `./publisher_tcp <IP> <PUERTO> <NOMBRE> <NUM_PARTIDO>`
+- **IP**: 127.0.0.1
+- **PUERTO**: 9001
+- **NOMBRE**: nombre del publicador de la forma pubj donde j=1,2,...
 - **NUM_PARTIDO**: Número del partido a publicar (1-20)
 - **Equipos generados**: 
   - Partido 1 → Equipos 1 vs 2
