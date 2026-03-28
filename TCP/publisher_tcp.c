@@ -34,6 +34,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <time.h>
 
 #define MAX_MESSAGE_SIZE 512
 #define MAX_EVENT_MESSAGE 256
@@ -41,24 +42,65 @@
 #define MAX_PARTIDOS 20
 
 /*
- * Plantillas de mensajes que se personalizan con los números de equipo
+ * Plantillas de mensajes deportivos para partidos
+ * Los mensajes pueden incluir %d para el número de equipo
+ * o ser independientes del equipo
  */
 const char *message_templates[] = {
-    "Gol de %d al minuto 5",
-    "Saque de banda para %d",
-    "Tarjeta amarilla al numero 7 de %d",
-    "Cambio: jugador 10 entra por jugador 20 en %d",
-    "Gol de %d al minuto 23",
-    "Fuera de juego anulado",
-    "Tarjeta roja al numero 15 de %d",
-    "Gol de %d al minuto 45",
-    "Fin del primer tiempo",
-    "Inicia el segundo tiempo",
-    "Gol de %d al minuto 67",
-    "Cambio: jugador 5 entra por jugador 3 en %d",
-    "Empate 2-2 en el marcador",
-    "Ultimos minutos del partido",
-    "Fin del partido 3-2 para %d"
+    /* Goles y acciones ofensivas */
+    "¡GOL! Equipo %d abre el marcador al minuto 3",
+    "¡GOL! Espectacular gol de equipo %d al minuto 12",
+    "Tiro de equipo %d desviado por poco",
+    "Remate de cabeza de %d fuera del arco",
+    "¡GOL! Gol de penalti convertido por %d",
+    "Equipo %d corre peligro de recibir gol",
+    
+    /* Tarjetas */
+    "Tarjeta amarilla para número 7 de equipo %d",
+    "Tarjeta roja directa para número 15 de equipo %d",
+    "Segunda amarilla: expulsado jugador de equipo %d",
+    "Amonestación a número 10 de %d por protesta",
+    
+    /* Cambios y estrategia */
+    "Cambio en equipo %d: entra número 11 por número 9",
+    "Cambio en equipo %d: sale número 5, entra número 23",
+    "Equipo %d aumenta presión ofensiva",
+    "Cambio defensivo en equipo %d para proteger resultado",
+    "Triple cambio simultáneo en equipo %d",
+    
+    /* Momentos del partido */
+    "Fuera de juego anulado a equipo %d",
+    "Balón recuperado por defensa de %d",
+    "Córner a favor de equipo %d",
+    "Saque de banda para equipo %d",
+    "Tiro libre directo para equipo %d",
+    "Tiempo muerto solicitado por técnico de equipo %d",
+    
+    /* Estadísticas y análisis */
+    "Primer tiempo: Equipo %d domina el juego",
+    "Equipo %d incrementa velocidad de pases",
+    "Racha de 5 remates consecutivos de equipo %d",
+    "Posesión de balón: 60% equipo %d, 40% rival",
+    "Centro de defensa de equipo %d realiza gran bloqueo",
+    
+    /* Momentos críticos */
+    "¡Gran jugada! Equipo %d se acerca al arco rival",
+    "Defensa de %d hace falta para evitar gol seguro",
+    "Equipo %d pierde balón en zona peligrosa",
+    "Portero de %d hace parada espectacular",
+    "¡Atajada milagrosa del portero de equipo %d!",
+    
+    /* Contexto del partido */
+    "HALFTIME: Primera mitad finaliza",
+    "Segundo tiempo inicia con intensidad",
+    "Equipos regresan al terreno de juego",
+    "FINAL: ¡El partido ha terminado!",
+    "Tension máxima en los últimos minutos",
+    "Equipo %d presiona en busca del empate",
+    "Equipo %d se defiende contra la avalancha rival",
+    "Pitch invasion: Aficionados invaden el campo",
+    "Revisor VAR analiza jugada controversial",
+    "Gol confirmado tras revisión del VAR"
 };
 
 #define NUM_MESSAGES (sizeof(message_templates) / sizeof(message_templates[0]))
@@ -164,19 +206,48 @@ int main(int argc, char *argv[]) {
     
     printf("[OK] Conectado al broker %s:%d\n\n", broker_ip, broker_port);
     
-    /* Enviar mensajes al broker */
-    printf("Enviando %lu mensajes...\n\n", NUM_MESSAGES);
+    /* Enviar mensajes al broker - ALEATORIO, no secuencial */
+    printf("Enviando 20 mensajes aleatorios...\n\n");
     
-    for (size_t i = 0; i < NUM_MESSAGES; i++) {
+    /* Inicializar seed del generador de números aleatorios */
+    srand(time(NULL) + getpid());
+    
+    /* Array para rastrear qué mensajes ya se han usado */
+    int used_messages[NUM_MESSAGES] = {0};
+    int messages_sent = 0;
+    
+    while (messages_sent < 20) {
         memset(message_buffer, 0, sizeof(message_buffer));
         
         char event_message[MAX_EVENT_MESSAGE];
         memset(event_message, 0, sizeof(event_message));
         
-        /* Generar mensaje personalizado con el equipo correspondiente */
-        /* Alternar entre equipo1 y equipo2 para que ambos tengan acciones */
-        int team = (i % 2 == 0) ? team1 : team2;
-        generate_message(event_message, sizeof(event_message), message_templates[i], team);
+        /* Seleccionar un mensaje aleatorio que no haya sido usado */
+        int random_idx;
+        do {
+            random_idx = rand() % NUM_MESSAGES;
+        } while (used_messages[random_idx] && messages_sent < NUM_MESSAGES);
+        
+        /* Si ya hemos usado todos los mensajes disponibles, reusarlos */
+        if (messages_sent >= NUM_MESSAGES) {
+            random_idx = rand() % NUM_MESSAGES;
+        } else {
+            used_messages[random_idx] = 1;
+        }
+        
+        /* Decidir aleatoriamente si este mensaje incluye un equipo o no */
+        int has_team = (strstr(message_templates[random_idx], "%d") != NULL);
+        
+        if (has_team) {
+            /* Alternar entre equipo1 y equipo2 */
+            int team = (messages_sent % 2 == 0) ? team1 : team2;
+            generate_message(event_message, sizeof(event_message), 
+                           message_templates[random_idx], team);
+        } else {
+            /* Mensaje sin equipo específico */
+            generate_message(event_message, sizeof(event_message), 
+                           message_templates[random_idx], 0);
+        }
         
         /* Construir mensaje en formato "PUBLISH|topic|mensaje" */
         snprintf(message_buffer, sizeof(message_buffer), "PUBLISH|%s|%s", 
@@ -192,16 +263,21 @@ int main(int argc, char *argv[]) {
          * Retorna: cantidad de bytes enviados o -1 si hay error
          */
         if (send(publisher_socket, message_buffer, strlen(message_buffer), 0) < 0) {
-            fprintf(stderr, "[ERROR] No se pudo enviar mensaje %lu: %s\n", i + 1, strerror(errno));
+            fprintf(stderr, "[ERROR] No se pudo enviar mensaje %d: %s\n", 
+                    messages_sent + 1, strerror(errno));
         } else {
-            printf("[%s] Mensaje %lu enviado: %s\n", publisher_id, i + 1, event_message);
+            printf("[%s] Mensaje %d enviado: %s\n", 
+                   publisher_id, messages_sent + 1, event_message);
         }
         
-        /* Pequena pausa entre mensajes para simular eventos en vivo */
-        sleep(1);
+        messages_sent++;
+        
+        /* Pausa aleatoria entre 0.5 y 2.5 segundos para simular eventos reales */
+        int random_delay = (rand() % 21) + 5; /* 5-25 decisimas de segundo */
+        usleep(random_delay * 100000);  /* Convertir a microsegundos */
     }
     
-    printf("\n[OK] Todos los %lu mensajes fueron enviados\n", NUM_MESSAGES);
+    printf("\n[OK] Los 20 mensajes fueron enviados\n");
     printf("Desconectando del broker...\n");
     
     /*
