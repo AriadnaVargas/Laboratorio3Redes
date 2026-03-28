@@ -462,8 +462,7 @@ void forward_message_to_subscribers(const char *topic, const char *message) {
 
 ## Ejecución
 
-
-Esta guía te explica paso a paso cómo compilar y ejecutar el sistema **Publicador-Suscriptor (Pub-Sub)** usando TCP y UDP en WSL.
+Esta guía te explica paso a paso cómo compilar y ejecutar el sistema **Publicador-Suscriptor (Pub-Sub) Multi-Match** usando TCP en WSL.
 
 ---
 
@@ -472,27 +471,168 @@ Esta guía te explica paso a paso cómo compilar y ejecutar el sistema **Publica
 ```bash
 wsl
 ```
-### 2. Ir a la carpeta del proyecto
+
+### 2. Ir a la carpeta del proyecto TCP
+
 ```bash
 cd ../Laboratorio3Redes/TCP
 ```
 
-### 3. Compile
+### 3. Compilar los programas
+
 ```bash
 gcc -Wall -Wextra -pthread -o broker_tcp broker_tcp.c
 gcc -Wall -Wextra -o publisher_tcp publisher_tcp.c
 gcc -Wall -Wextra -o subscriber_tcp subscriber_tcp.c
 ```
 
-### 4. Debes abrir 5 terminales diferentes en WSL y correr:
+### 4. Ejecutar en múltiples terminales WSL
 
-| Terminal | Command |
-|----------|---------|
-| 1 | `./broker_tcp` |
-| 2 | `./subscriber_tcp 127.0.0.1 9001 sub1 match_A_vs_B` |
-| 3 | `./subscriber_tcp 127.0.0.1 9001 sub2 match_C_vs_D` |
-| 4 | `./publisher_tcp 127.0.0.1 9001 pub1 match_A_vs_B` |
-| 5 | `./publisher_tcp 127.0.0.1 9001 pub2 match_C_vs_D` |
+**Estructura Requerida:**
+- **Terminal 1**: 1 broker central
+- **Terminal 2**: 1 subscriber que se suscribe a `i` partidos
+- **Terminales 3 a (i+2)**: `i` publishers, uno por cada partido
+
+**Ejemplo: Si el subscriber se suscribe a 3 partidos (i=3)**
+- Se necesitan exactamente **3 publishers** (pub1, pub2, pub3)
+- Cada publisher debe publicar a su respectivo partido (1, 2, 3)
+
+---
+
+#### Terminal 1: Broker (Central)
+```bash
+./broker_tcp
+```
+
+---
+
+#### Terminal 2: Subscriber (Recibe de i partidos)
+```bash
+./subscriber_tcp 127.0.0.1 9001 sub1 i
+./subscriber_tcp 127.0.0.1 9001 sub2 i
+```
+
+**Donde `i` es la cantidad de partidos a los que se suscribe:**
+- `i=1`: Se suscribe solo a `match_1_vs_2`
+- `i=2`: Se suscribe a `match_1_vs_2` y `match_3_vs_4`
+- `i=3`: Se suscribe a `match_1_vs_2`, `match_3_vs_4`, `match_5_vs_6`
+
+**Salida esperada:**
+```
+[Subscriber sub1] Iniciando suscripción a 3 partidos...
+[Subscriber sub1] Suscrito a topic: match_1_vs_2
+[Subscriber sub1] Suscrito a topic: match_3_vs_4
+[Subscriber sub1] Suscrito a topic: match_5_vs_6
+```
+
+---
+
+#### Terminales 3 a (i+2): Publishers (Uno por cada partido)
+
+**Si i=3, necesitas exactamente 3 publishers:**
+
+**Terminal 3: Publisher para Partido 1**
+```bash
+./publisher_tcp 127.0.0.1 9001 pub1 1
+```
+Publica en: `match_1_vs_2` (equipos 1 vs 2)
+
+**Terminal 4: Publisher para Partido 2**
+```bash
+./publisher_tcp 127.0.0.1 9001 pub2 2
+```
+Publica en: `match_3_vs_4` (equipos 3 vs 4)
+
+**Terminal 5: Publisher para Partido 3**
+```bash
+./publisher_tcp 127.0.0.1 9001 pub3 3
+```
+Publica en: `match_5_vs_6` (equipos 5 vs 6)
+
+**En general:**
+```bash
+./publisher_tcp 127.0.0.1 9001 pubi i
+```
+Donde i es un numero entero
+
+**Salida esperada de cada publisher:**
+```
+[pub1] Mensaje 1 enviado: ¡GOL! Equipo 1 abre el marcador al minuto 3
+[pub1] Mensaje 2 enviado: Segundo tiempo inicia con intensidad
+[pub1] Mensaje 3 enviado: Tarjeta amarilla para número 7 de equipo 2
+...
+```
+
+---
+
+### ⚠️ REGLA IMPORTANTE: Coincidencia de Publishers con Partidos
+
+| Si Subscriber se suscribe a | Entonces necesitas | Publishers |
+|-----|-----------|----------|
+| i=1 | 1 publisher | `pub1` con partido `1` |
+| i=2 | 2 publishers | `pub1` con `1`, `pub2` con `2` |
+| i=3 | 3 publishers | `pub1` con `1`, `pub2` con `2`, `pub3` con `3` |
+| i=N | N publishers | `pub1` con `1`, `pub2` con `2`, ..., `pubN` con `N` |
+
+**Fórmula:**
+```
+Para cada j = 1 hasta i:
+  Terminal (j+2): ./publisher_tcp 127.0.0.1 9001 pubj j
+```
+
+---
+
+### 5. Comportamiento Esperado
+
+**Salida esperada del Subscriber (Terminal 2):**
+```
+[Subscriber sub1] Iniciando suscripción a 2 matches...
+[Subscriber sub1] Suscrito a topic: match_1_vs_2
+[Subscriber sub1] Suscrito a topic: match_3_vs_4
+[Subscriber sub1] Mensaje de match_1_vs_2: Evento del equipo 1
+[Subscriber sub1] Mensaje de match_3_vs_4: Evento del equipo 3
+[Subscriber sub1] Mensaje de match_1_vs_2: Evento del equipo 2
+[Subscriber sub1] Mensaje de match_3_vs_4: Evento del equipo 4
+...
+```
+
+Los mensajes de diferentes matches aparecen **intercalados en tiempo real** según se publiquen.
+
+---
+
+### 6. Parámetros del Sistema
+
+#### Para Subscribers
+- **Formato**: `./subscriber_tcp <IP> <PUERTO> <NOMBRE> <NUM_MATCHES>`
+- **IP**: 127.0.0.1
+- **PUERTO**: 9001
+- **NOMBRE**: nombre del subscriptor de la forma subj donde j=1,2,...
+- **NUM_MATCHES**: Número de matches a los que suscribirse (1-20)
+- **Tópicos generados**: `match_1_vs_2`, `match_3_vs_4`, `match_5_vs_6`, ...
+
+#### Para Publishers
+- **Formato**: `./publisher_tcp <IP> <PUERTO> <NOMBRE> <NUM_PARTIDO>`
+- **IP**: 127.0.0.1
+- **PUERTO**: 9001
+- **NOMBRE**: nombre del publicador de la forma pubj donde j=1,2,...
+- **NUM_PARTIDO**: Número del partido a publicar (1-20)
+- **Equipos generados**: 
+  - Partido 1 → Equipos 1 vs 2
+  - Partido 2 → Equipos 3 vs 4
+  - Partido 3 → Equipos 5 vs 6
+  - Fórmula: Equipo 1 = `2*partido - 1`, Equipo 2 = `2*partido`
+
+---
+
+### 7. Tabla de Comparativa de Matches
+
+| Partido | Topic | Equipo 1 | Equipo 2 |
+|---------|-------|----------|----------|
+| 1 | `match_1_vs_2` | 1 | 2 |
+| 2 | `match_3_vs_4` | 3 | 4 |
+| 3 | `match_5_vs_6` | 5 | 6 |
+| ... | ... | ... | ... |
+| N | `match_{2N-1}_vs_{2N}` | 2N-1 | 2N |
 
 
 
@@ -513,4 +653,4 @@ gcc -Wall -Wextra -o subscriber_tcp subscriber_tcp.c
 
 **Autor**: Laboratorio de Redes - Universidad de los Andes
 **Fecha**: Marzo 2026
-**Estado**: TCP completado, UDP en desarrollo
+**Estado**: ✅ TCP Multi-Match completado | UDP en desarrollo

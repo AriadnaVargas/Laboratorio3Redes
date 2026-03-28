@@ -1,18 +1,20 @@
 /*
- * TCP Pub-Sub Subscriber
+ * TCP Pub-Sub Subscriber (Múltiples Partidos)
  * 
  * DESCRIPCION:
- * Cliente suscriptor que se conecta al broker y se suscribe a uno o más
- * temas específicos. El suscriptor recibe todos los mensajes publicados
- * en los temas suscritos y los muestra en pantalla.
+ * Cliente suscriptor que se conecta al broker y se suscribe a múltiples
+ * partidos dinámicamente. El suscriptor recibe todos los mensajes publicados
+ * en los partidos suscritos y los muestra en pantalla intercalados.
  * 
  * USO:
- * ./subscriber_tcp <broker_ip> <broker_port> <subscriber_id> <topic1> [topic2] ...
- * Ejemplo (suscriptor a un tema):
- * ./subscriber_tcp 127.0.0.1 9001 sub1 match_A_vs_B
+ * ./subscriber_tcp <broker_ip> <broker_port> <subscriber_id> <num_partidos>
+ * Ejemplo (suscriptor a 3 partidos):
+ * ./subscriber_tcp 127.0.0.1 9001 sub1 3
  * 
- * Ejemplo (suscriptor a múltiples temas):
- * ./subscriber_tcp 127.0.0.1 9001 sub1 match_A_vs_B match_C_vs_D
+ * Esto genera automáticamente suscripciones a:
+ * - match_1_vs_2
+ * - match_3_vs_4
+ * - match_5_vs_6
  * 
  * FUNCIONES SOCKET UTILIZADAS:
  * 1. socket() - Crea un socket TCP (SOCK_STREAM)
@@ -33,6 +35,8 @@
 #include <signal.h>
 
 #define MAX_MESSAGE_SIZE 512
+#define MAX_BUFFER_SIZE 1024
+#define MAX_PARTIDOS 20
 
 volatile int keep_running = 1;
 
@@ -48,32 +52,47 @@ void signal_handler(int sig) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 5) {
-        fprintf(stderr, "Uso: %s <broker_ip> <broker_port> <subscriber_id> <topic1> [topic2] ...\n", argv[0]);
-        fprintf(stderr, "Ejemplo: %s 127.0.0.1 9001 sub1 match_A_vs_B\n", argv[0]);
-        fprintf(stderr, "Ejemplo (multiples temas): %s 127.0.0.1 9001 sub1 match_A_vs_B match_C_vs_D\n", argv[0]);
+    if (argc != 5) {
+        fprintf(stderr, "Uso: %s <broker_ip> <broker_port> <subscriber_id> <num_partidos>\n", argv[0]);
+        fprintf(stderr, "Ejemplo: %s 127.0.0.1 9001 sub1 3\n", argv[0]);
+        fprintf(stderr, "\nEsto se suscribirá a 3 partidos:\n");
+        fprintf(stderr, "  - match_1_vs_2\n");
+        fprintf(stderr, "  - match_3_vs_4\n");
+        fprintf(stderr, "  - match_5_vs_6\n");
         exit(EXIT_FAILURE);
     }
     
     const char *broker_ip = argv[1];
     int broker_port = atoi(argv[2]);
     const char *subscriber_id = argv[3];
-    int num_topics = argc - 4;
-    const char **topics = (const char **)&argv[4];
+    int num_partidos = atoi(argv[4]);
+    
+    /* Validar número de partidos */
+    if (num_partidos <= 0 || num_partidos > MAX_PARTIDOS) {
+        fprintf(stderr, "[ERROR] Número de partidos debe estar entre 1 y %d\n", MAX_PARTIDOS);
+        exit(EXIT_FAILURE);
+    }
     
     int subscriber_socket;
     struct sockaddr_in broker_addr;
-    char message_buffer[MAX_MESSAGE_SIZE];
+    char message_buffer[MAX_BUFFER_SIZE];
     int bytes_received;
+    
+    /* Generar topics dinámicamente */
+    char topics[MAX_PARTIDOS][100];
+    for (int i = 0; i < num_partidos; i++) {
+        int team1 = 2 * (i + 1) - 1;  /* 1, 3, 5, ... */
+        int team2 = 2 * (i + 1);      /* 2, 4, 6, ... */
+        snprintf(topics[i], 100, "match_%d_vs_%d", team1, team2);
+    }
     
     printf("===== TCP PUB-SUB SUBSCRIBER =====\n");
     printf("Suscriptor ID: %s\n", subscriber_id);
-    printf("Temas a suscribirse: ");
-    for (int i = 0; i < num_topics; i++) {
-        printf("%s", topics[i]);
-        if (i < num_topics - 1) printf(", ");
+    printf("Número de partidos: %d\n", num_partidos);
+    printf("Partidos a suscribirse:\n");
+    for (int i = 0; i < num_partidos; i++) {
+        printf("  - %s\n", topics[i]);
     }
-    printf("\n");
     printf("Conectando a broker en %s:%d...\n\n", broker_ip, broker_port);
     
     /* Configurar manejador de señales para Ctrl+C */
@@ -120,16 +139,27 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     
-    printf("[OK] Conectado al broker %s:%d\n\n", broker_ip, broker_port);
-    
-    /* Suscribirse a todos los temas especificados */
-    printf("Suscribiendo a temas...\n\n");
-    
-    for (int i = 0; i < num_topics; i++) {
-        memset(message_buffer, 0, sizeof(message_buffer));
-        
-        /* Construir mensaje de suscripcion en formato "SUBSCRIBE|topic" */
-        snprintf(message_buffer, sizeof(message_buffer), "SUBSCRIBE|%s", topics[i]);
+     printf("[OK] Conectado al broker %s:%d\n\n", broker_ip, broker_port);
+     
+     /* Enviar mensaje de REGISTRO con nombre de suscriptor y cantidad de tópicos */
+     printf("Enviando registro al broker...\n");
+     memset(message_buffer, 0, sizeof(message_buffer));
+      snprintf(message_buffer, sizeof(message_buffer), "REGISTER|%s|%d\n", subscriber_id, num_partidos);
+     
+     if (send(subscriber_socket, message_buffer, strlen(message_buffer), 0) < 0) {
+         fprintf(stderr, "[ERROR] No se pudo enviar registro al broker: %s\n", strerror(errno));
+     } else {
+         printf("[OK] Registro enviado: %s\n\n", message_buffer);
+     }
+     
+     /* Suscribirse a todos los partidos especificados */
+     printf("Suscribiendo a partidos...\n\n");
+     
+     for (int i = 0; i < num_partidos; i++) {
+         memset(message_buffer, 0, sizeof(message_buffer));
+         
+         /* Construir mensaje de suscripcion en formato "SUBSCRIBE|topic" */
+          snprintf(message_buffer, sizeof(message_buffer), "SUBSCRIBE|%s\n", topics[i]);
         
         /*
          * send() - Enviar datos al broker
