@@ -548,6 +548,7 @@ Publica en: `match_3_vs_4` (equipos 3 vs 4)
 ./publisher_tcp 127.0.0.1 9001 pub3 3
 ```
 Publica en: `match_5_vs_6` (equipos 5 vs 6)
+
 **En general:**
 ```bash
 ./publisher_tcp 127.0.0.1 9001 pubi i
