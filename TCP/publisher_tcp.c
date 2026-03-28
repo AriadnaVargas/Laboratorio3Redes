@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
     
     /* Array para rastrear qué mensajes ya se han usado */
     int used_messages[NUM_MESSAGES] = {0};
-    int messages_sent = 0;
+    size_t messages_sent = 0;
     
     while (messages_sent < 20) {
         memset(message_buffer, 0, sizeof(message_buffer));
@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
         
         if (has_team) {
             /* Alternar entre equipo1 y equipo2 */
-            int team = (messages_sent % 2 == 0) ? team1 : team2;
+            int team = ((int)messages_sent % 2 == 0) ? team1 : team2;
             generate_message(event_message, sizeof(event_message), 
                            message_templates[random_idx], team);
         } else {
@@ -263,10 +263,10 @@ int main(int argc, char *argv[]) {
          * Retorna: cantidad de bytes enviados o -1 si hay error
          */
         if (send(publisher_socket, message_buffer, strlen(message_buffer), 0) < 0) {
-            fprintf(stderr, "[ERROR] No se pudo enviar mensaje %d: %s\n", 
+            fprintf(stderr, "[ERROR] No se pudo enviar mensaje %zu: %s\n", 
                     messages_sent + 1, strerror(errno));
         } else {
-            printf("[%s] Mensaje %d enviado: %s\n", 
+            printf("[%s] Mensaje %zu enviado: %s\n", 
                    publisher_id, messages_sent + 1, event_message);
         }
         
