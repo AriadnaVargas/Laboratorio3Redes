@@ -12,10 +12,13 @@
  * Su trabajo es suscribirse a uno o varios topics y luego quedarse
  * esperando los mensajes que el broker le reenvia.
  *
- * Secuencia de ejecucion del sistema:
- * 1. Primero se ejecuta el broker.
- * 2. Despues se ejecuta el subscriber para registrarse en los topics.
- * 3. Finalmente se ejecutan uno o varios publishers para enviar eventos.
+ * Secuencia de ejecucion de este programa:
+ * 1. Lee ip, puerto, nombre y cantidad de partidos desde consola.
+ * 2. Genera los topics a los que se va a suscribir.
+ * 3. Crea el socket UDP del subscriber.
+ * 4. Envia un mensaje SUBSCRIBE por cada topic al broker.
+ * 5. Entra en un ciclo infinito esperando publicaciones reenviadas.
+ * 6. Cuando recibe un mensaje, separa topic y contenido y los imprime.
  */
 
 #define MAX_TOPIC_SIZE 100

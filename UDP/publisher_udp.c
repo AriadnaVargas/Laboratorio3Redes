@@ -12,10 +12,13 @@
  * Su trabajo es generar eventos de un partido especifico y enviarlos
  * al broker con el formato PUBLISH|topic|contenido.
  *
- * Secuencia de ejecucion del sistema:
- * 1. Primero se ejecuta el broker.
- * 2. Luego se ejecutan los subscribers para que se suscriban a topics.
- * 3. Finalmente se ejecutan los publishers para empezar a publicar eventos.
+ * Secuencia de ejecucion de este programa:
+ * 1. Lee ip, puerto, nombre y numero de partido desde consola.
+ * 2. Calcula el topic del partido y los equipos correspondientes.
+ * 3. Crea el socket UDP del publisher.
+ * 4. Genera eventos de ejemplo del partido.
+ * 5. Envia cada evento al broker con formato PUBLISH|topic|contenido.
+ * 6. Espera un segundo entre mensajes para simular tiempo real.
  */
 
 #define MAX_TOPIC_SIZE 100

@@ -13,18 +13,28 @@
  * clientes estan suscritos a cada topic y reenviar cada publicacion
  * a los subscribers correspondientes.
  *
- * Secuencia de ejecucion del sistema:
- * 1. Primero se ejecuta este broker para que quede escuchando.
- * 2. Despues se ejecutan los subscribers para registrarse en topics.
- * 3. Finalmente se ejecutan los publishers para enviar publicaciones.
+ * Secuencia de ejecucion de este programa:
+ * 1. Lee el puerto desde consola o usa el puerto por defecto.
+ * 2. Crea el socket UDP del broker.
+ * 3. Hace bind() para quedar escuchando en ese puerto.
+ * 4. Entra en un ciclo infinito esperando datagramas.
+ * 5. Si recibe SUBSCRIBE, guarda la suscripcion.
+ * 6. Si recibe PUBLISH, reenvia el mensaje a los subscribers del topic.
  */
 
 #define MAX_BUFFER_SIZE 2048
 #define MAX_TOPIC_SIZE 100
 #define MAX_SUBSCRIBERS 100
+#define MAX_PUBLISHERS 100
 
 //cada subscriber guarda 2 cosas: el topic, y la direccion de red del cliente
 struct Subscriber {
+    char topic[MAX_TOPIC_SIZE];
+    struct sockaddr_in addr;
+};
+
+//cada topic queda asociado a un solo publisher
+struct Publisher {
     char topic[MAX_TOPIC_SIZE];
     struct sockaddr_in addr;
 };
@@ -41,6 +51,24 @@ int subscriber_exists(struct Subscriber subscribers[], int subscriber_count,
     }
 
     return 0;
+}
+
+//buscar si el topic ya tiene un publisher asignado
+int find_publisher_for_topic(struct Publisher publishers[], int publisher_count,
+                             const char *topic) {
+    for (int i = 0; i < publisher_count; i++) {
+        if (strcmp(publishers[i].topic, topic) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+//validar si dos direcciones corresponden al mismo cliente UDP
+int same_udp_client(struct sockaddr_in addr1, struct sockaddr_in addr2) {
+    return addr1.sin_addr.s_addr == addr2.sin_addr.s_addr &&
+           addr1.sin_port == addr2.sin_port;
 }
 
 int main(int argc, char *argv[]) {
@@ -100,6 +128,9 @@ int main(int argc, char *argv[]) {
     // arreglo para guardar suscriptores y el tema al cual estan suscritos
     struct Subscriber subscribers[MAX_SUBSCRIBERS];
     int subscriber_count = 0;
+    //arreglo para guardar que publisher fue el primero en publicar cada topic
+    struct Publisher publishers[MAX_PUBLISHERS];
+    int publisher_count = 0;
 
     //ciclo infinito para que el broker se quede corriendo indefinidamente
     while (1) {
@@ -171,6 +202,28 @@ int main(int argc, char *argv[]) {
 
             if (topic == NULL || content == NULL) {
                 printf("Publicacion invalida\n");
+                continue;
+            }
+
+            //cada topic solo puede ser manejado por un publisher
+            int publisher_index = find_publisher_for_topic(publishers, publisher_count, topic);
+
+            if (publisher_index == -1) {
+                if (publisher_count < MAX_PUBLISHERS) {
+                    strncpy(publishers[publisher_count].topic, topic, MAX_TOPIC_SIZE - 1);
+                    publishers[publisher_count].topic[MAX_TOPIC_SIZE - 1] = '\0';
+                    publishers[publisher_count].addr = clientAddr;
+                    publisher_count++;
+
+                    printf("Publisher %s:%d asignado al tema %s\n",
+                           inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), topic);
+                } else {
+                    printf("No hay espacio para registrar mas publishers\n");
+                    continue;
+                }
+            } else if (!same_udp_client(publishers[publisher_index].addr, clientAddr)) {
+                printf("Publicacion rechazada: el tema %s ya tiene un publisher asignado\n",
+                       topic);
                 continue;
             }
 
