@@ -144,7 +144,7 @@ int main(int argc, char *argv[]) {
      /* Enviar mensaje de REGISTRO con nombre de suscriptor y cantidad de tópicos */
      printf("Enviando registro al broker...\n");
      memset(message_buffer, 0, sizeof(message_buffer));
-     snprintf(message_buffer, sizeof(message_buffer), "REGISTER|%s|%d", subscriber_id, num_partidos);
+      snprintf(message_buffer, sizeof(message_buffer), "REGISTER|%s|%d\n", subscriber_id, num_partidos);
      
      if (send(subscriber_socket, message_buffer, strlen(message_buffer), 0) < 0) {
          fprintf(stderr, "[ERROR] No se pudo enviar registro al broker: %s\n", strerror(errno));
@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
          memset(message_buffer, 0, sizeof(message_buffer));
          
          /* Construir mensaje de suscripcion en formato "SUBSCRIBE|topic" */
-         snprintf(message_buffer, sizeof(message_buffer), "SUBSCRIBE|%s", topics[i]);
+          snprintf(message_buffer, sizeof(message_buffer), "SUBSCRIBE|%s\n", topics[i]);
         
         /*
          * send() - Enviar datos al broker

@@ -60,6 +60,12 @@ typedef struct {
     int socket;
 } publisher_args_t;
 
+/* Estructura para pasar parámetros al thread del subscriber */
+typedef struct {
+    int socket;
+    char initial_message[MAX_MESSAGE_SIZE];
+} subscriber_args_t;
+
 /* Variables globales para gestionar suscriptores */
 subscriber_t subscribers[MAX_SUBSCRIBERS];
 int num_subscribers = 0;
@@ -173,6 +179,14 @@ void *handle_publisher(void *arg) {
     return NULL;
 }
 
+/* Wrapper para handle_subscriber que puede ser usado en pthread_create */
+void *handle_subscriber_thread(void *arg) {
+    subscriber_args_t *args = (subscriber_args_t *)arg;
+    handle_subscriber(args->socket, args->initial_message);
+    free(args);
+    return NULL;
+}
+
 /*
  * handle_subscriber()
  * Gestiona la conexion de un suscriptor en el hilo principal.
@@ -186,43 +200,85 @@ void handle_subscriber(int client_socket, const char *initial_message) {
     char subscriber_name[100] = {0};
     int expected_topics = 0;
     
-    /* Procesar mensaje REGISTER inicial */
-    if (strncmp(initial_message, "REGISTER", 8) == 0) {
-        char msg_copy[MAX_MESSAGE_SIZE];
-        strcpy(msg_copy, initial_message);
-        char *token = strtok(msg_copy, "|");
-        if (token != NULL && strcmp(token, "REGISTER") == 0) {
-            token = strtok(NULL, "|");
-            if (token != NULL) {
-                strcpy(subscriber_name, token);
-            }
-            
-            token = strtok(NULL, "");
-            if (token != NULL) {
-                expected_topics = atoi(token);
-            }
-            
-            if (strlen(subscriber_name) > 0 && expected_topics > 0) {
-                printf("[BROKER] Suscriptor '%s' será registrado con %d tópicos esperados\n", 
-                       subscriber_name, expected_topics);
-                
-                /* Crear una entrada en subscribers para reservar el socket */
-                pthread_mutex_lock(&subscribers_mutex);
-                if (num_subscribers < MAX_SUBSCRIBERS) {
-                    subscribers[num_subscribers].socket = client_socket;
-                    strcpy(subscribers[num_subscribers].subscriber_name, subscriber_name);
-                    subscribers[num_subscribers].expected_topics = expected_topics;
-                    subscribers[num_subscribers].num_topics = 0;
-                    strcpy(subscribers[num_subscribers].topic, "");
-                    num_subscribers++;
-                    printf("[BROKER] Entrada reservada para suscriptor '%s'\n", subscriber_name);
+    /* Procesar el buffer inicial que puede contener REGISTER + múltiples SUBSCRIBE */
+    char initial_copy[MAX_MESSAGE_SIZE];
+    strcpy(initial_copy, initial_message);
+    
+    char *saveptr = NULL;
+    char *line = strtok_r(initial_copy, "\n", &saveptr);
+    
+    while (line != NULL && strlen(line) > 0) {
+        printf("[BROKER] [Initial] Procesando línea: %s\n", line);
+        
+        /* Procesar mensaje REGISTER */
+        if (strncmp(line, "REGISTER", 8) == 0) {
+            char msg_copy[MAX_MESSAGE_SIZE];
+            strcpy(msg_copy, line);
+            char *token = strtok(msg_copy, "|");
+            if (token != NULL && strcmp(token, "REGISTER") == 0) {
+                token = strtok(NULL, "|");
+                if (token != NULL) {
+                    strcpy(subscriber_name, token);
                 }
-                pthread_mutex_unlock(&subscribers_mutex);
+                
+                token = strtok(NULL, "");
+                if (token != NULL) {
+                    expected_topics = atoi(token);
+                }
+                
+                if (strlen(subscriber_name) > 0 && expected_topics > 0) {
+                    printf("[BROKER] Suscriptor '%s' será registrado con %d tópicos esperados\n", 
+                           subscriber_name, expected_topics);
+                    
+                    /* Crear una entrada en subscribers para reservar el socket */
+                    pthread_mutex_lock(&subscribers_mutex);
+                    if (num_subscribers < MAX_SUBSCRIBERS) {
+                        subscribers[num_subscribers].socket = client_socket;
+                        strcpy(subscribers[num_subscribers].subscriber_name, subscriber_name);
+                        subscribers[num_subscribers].expected_topics = expected_topics;
+                        subscribers[num_subscribers].num_topics = 0;
+                        strcpy(subscribers[num_subscribers].topic, "");
+                        num_subscribers++;
+                        printf("[BROKER] Entrada reservada para suscriptor '%s'\n", subscriber_name);
+                    }
+                    pthread_mutex_unlock(&subscribers_mutex);
+                }
             }
         }
+        /* Procesar mensaje SUBSCRIBE */
+        else if (strncmp(line, "SUBSCRIBE", 9) == 0) {
+            char msg_copy[MAX_MESSAGE_SIZE];
+            strcpy(msg_copy, line);
+            
+            char *msg_saveptr = NULL;
+            char *token = strtok_r(msg_copy, "|", &msg_saveptr);
+            if (token != NULL && strcmp(token, "SUBSCRIBE") == 0) {
+                token = strtok_r(NULL, "", &msg_saveptr);
+                char topic[100] = {0};
+                
+                if (token != NULL) {
+                    strcpy(topic, token);
+                    
+                    if (register_subscriber(client_socket, topic, subscriber_name)) {
+                        printf("[BROKER] Suscriptor '%s' registrado para tema '%s' (total: registrado)\n", 
+                               subscriber_name, topic);
+                        
+                        char ack[150];
+                        snprintf(ack, sizeof(ack), "Suscrito al tema: %s\n", topic);
+                        send(client_socket, ack, strlen(ack), 0);
+                    } else {
+                        fprintf(stderr, "[ERROR] No se pudo registrar suscriptor (lista llena)\n");
+                        close(client_socket);
+                        return;
+                    }
+                }
+            }
+        }
+        
+        line = strtok_r(NULL, "\n", &saveptr);
     }
     
-    /* Loop para recibir SUBSCRIBE messages */
+    /* Loop para recibir más SUBSCRIBE messages (después de los del buffer inicial) */
     char buffer[MAX_MESSAGE_SIZE];
     int bytes_received;
     
@@ -238,48 +294,52 @@ void handle_subscriber(int client_socket, const char *initial_message) {
         buffer[bytes_received] = '\0';
         printf("[BROKER] Mensaje recibido del suscriptor: %s\n", buffer);
         
-        /* Procesar mensaje SUBSCRIBE */
-        if (strncmp(buffer, "SUBSCRIBE", 9) == 0) {
-            char msg_copy[MAX_MESSAGE_SIZE];
-            strcpy(msg_copy, buffer);
-            char *token = strtok(msg_copy, "|");
-            if (token != NULL && strcmp(token, "SUBSCRIBE") == 0) {
-                token = strtok(NULL, "");
-                char topic[100] = {0};
+        /* Procesar múltiples líneas (delimitadas por \n) en case de que TCP coalesza múltiples send() */
+        char buffer_copy[MAX_MESSAGE_SIZE];
+        strcpy(buffer_copy, buffer);
+        
+        char *saveptr2 = NULL;
+        line = strtok_r(buffer_copy, "\n", &saveptr2);
+        while (line != NULL) {
+            /* Saltar líneas vacías */
+            if (strlen(line) == 0) {
+                line = strtok_r(NULL, "\n", &saveptr2);
+                continue;
+            }
+            
+            printf("[BROKER] Procesando línea: %s\n", line);
+            
+            /* Procesar mensaje SUBSCRIBE */
+            if (strncmp(line, "SUBSCRIBE", 9) == 0) {
+                char msg_copy[MAX_MESSAGE_SIZE];
+                strcpy(msg_copy, line);
                 
-                if (token != NULL) {
-                    strcpy(topic, token);
+                char *msg_saveptr = NULL;
+                char *token = strtok_r(msg_copy, "|", &msg_saveptr);
+                if (token != NULL && strcmp(token, "SUBSCRIBE") == 0) {
+                    token = strtok_r(NULL, "", &msg_saveptr);
+                    char topic[100] = {0};
                     
-                    /* Buscar el subscriber por socket para obtener su nombre */
-                    char current_name[100] = "unknown";
-                    int current_expected = 0;
-                    int current_count = 0;
-                    
-                    pthread_mutex_lock(&subscribers_mutex);
-                    for (int i = 0; i < num_subscribers; i++) {
-                        if (subscribers[i].socket == client_socket) {
-                            strcpy(current_name, subscribers[i].subscriber_name);
-                            current_expected = subscribers[i].expected_topics;
-                            current_count = subscribers[i].num_topics + 1;  /* +1 porque estamos registrando este nuevo topic */
-                            break;
-                        }
-                    }
-                    pthread_mutex_unlock(&subscribers_mutex);
-                    
-                    if (register_subscriber(client_socket, topic, current_name)) {
-                        printf("[BROKER] Suscriptor '%s' registrado para tema '%s' (total: %d de %d temas)\n", 
-                               current_name, topic, current_count, current_expected);
+                    if (token != NULL) {
+                        strcpy(topic, token);
                         
-                        char ack[150];
-                        snprintf(ack, sizeof(ack), "Suscrito al tema: %s\n", topic);
-                        send(client_socket, ack, strlen(ack), 0);
-                    } else {
-                        fprintf(stderr, "[ERROR] No se pudo registrar suscriptor (lista llena)\n");
-                        close(client_socket);
-                        return;
+                        if (register_subscriber(client_socket, topic, subscriber_name)) {
+                            printf("[BROKER] Suscriptor '%s' registrado para tema '%s' (total: registrado)\n", 
+                                   subscriber_name, topic);
+                            
+                            char ack[150];
+                            snprintf(ack, sizeof(ack), "Suscrito al tema: %s\n", topic);
+                            send(client_socket, ack, strlen(ack), 0);
+                        } else {
+                            fprintf(stderr, "[ERROR] No se pudo registrar suscriptor (lista llena)\n");
+                            close(client_socket);
+                            return;
+                        }
                     }
                 }
             }
+            
+            line = strtok_r(NULL, "\n", &saveptr2);
         }
     }
 }
@@ -299,34 +359,36 @@ void handle_subscriber(int client_socket, const char *initial_message) {
 int register_subscriber(int socket, const char *topic, const char *subscriber_name) {
     pthread_mutex_lock(&subscribers_mutex);
     
-    /* Buscar si el subscriber ya existe */
-    int subscriber_idx = -1;
+    /* Buscar si ya existe una entrada exacta (socket + topic) para evitar duplicados */
+    for (int i = 0; i < num_subscribers; i++) {
+        if (subscribers[i].socket == socket && strcmp(subscribers[i].topic, topic) == 0) {
+            /* Ya existe, no duplicar */
+            pthread_mutex_unlock(&subscribers_mutex);
+            return 1;
+        }
+    }
+    
+    /* Es un nuevo topic (aunque el socket ya exista) */
+    if (num_subscribers >= MAX_SUBSCRIBERS) {
+        pthread_mutex_unlock(&subscribers_mutex);
+        return 0;
+    }
+    
+    subscribers[num_subscribers].socket = socket;
+    strcpy(subscribers[num_subscribers].subscriber_name, subscriber_name);
+    strcpy(subscribers[num_subscribers].topic, topic);
+    
+    /* Buscar expected_topics desde una entrada anterior del mismo socket */
+    subscribers[num_subscribers].expected_topics = 0;
+    subscribers[num_subscribers].num_topics = 0;
     for (int i = 0; i < num_subscribers; i++) {
         if (subscribers[i].socket == socket) {
-            subscriber_idx = i;
+            subscribers[num_subscribers].expected_topics = subscribers[i].expected_topics;
             break;
         }
     }
     
-    if (subscriber_idx == -1) {
-        /* Es un nuevo subscriber */
-        if (num_subscribers >= MAX_SUBSCRIBERS) {
-            pthread_mutex_unlock(&subscribers_mutex);
-            return 0;
-        }
-        
-        subscribers[num_subscribers].socket = socket;
-        strcpy(subscribers[num_subscribers].subscriber_name, subscriber_name);
-        subscribers[num_subscribers].num_topics = 1;
-        strcpy(subscribers[num_subscribers].topic, topic);
-        num_subscribers++;
-    } else {
-        /* El subscriber ya existe, agregar un nuevo tópico */
-        subscribers[subscriber_idx].num_topics++;
-        
-        /* Nota: En este modelo, cada tópico se almacena en una entrada separada */
-        /* Por lo que un subscriber con 3 tópicos ocupará 3 entradas */
-    }
+    num_subscribers++;
     
     pthread_mutex_unlock(&subscribers_mutex);
     return 1;
@@ -486,9 +548,27 @@ int main() {
                 }
                 
             } else if (strncmp(initial_message, "REGISTER", 8) == 0 || strncmp(initial_message, "SUBSCRIBE", 9) == 0) {
-                /* Es un suscriptor */
+                /* Es un suscriptor - crear un thread para manejarlo */
                 printf("[BROKER] Cliente identificado como SUSCRIPTOR\n");
-                handle_subscriber(client_socket, initial_message);
+                
+                pthread_t subscriber_thread;
+                subscriber_args_t *sub_args = malloc(sizeof(subscriber_args_t));
+                if (sub_args != NULL) {
+                    sub_args->socket = client_socket;
+                    strcpy(sub_args->initial_message, initial_message);
+                    
+                    if (pthread_create(&subscriber_thread, NULL, handle_subscriber_thread, sub_args) == 0) {
+                        printf("[BROKER] Thread creado para suscriptor (ID: %lu)\n", subscriber_thread);
+                        pthread_detach(subscriber_thread);
+                    } else {
+                        fprintf(stderr, "[ERROR] No se pudo crear thread para suscriptor: %s\n", strerror(errno));
+                        free(sub_args);
+                        close(client_socket);
+                    }
+                } else {
+                    fprintf(stderr, "[ERROR] No se pudo asignar memoria para argumentos del thread de suscriptor\n");
+                    close(client_socket);
+                }
             } else {
                 printf("[BROKER] Mensaje invalido, cerrando conexion\n");
                 close(client_socket);
