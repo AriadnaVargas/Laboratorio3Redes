@@ -131,6 +131,43 @@ bytes_received = recv(socket, buffer, sizeof(buffer) - 1, 0);
 - **Nota TCP**: Datos completos y en orden
 - **Nota UDP**: Cada datagrama puede perderse o llegar duplicado
 
+##### **`sendto(int sockfd, const void *buf, size_t len, int flags, const struct sockaddr *dest_addr, socklen_t addrlen)`**
+```c
+sendto(clientSocket, message, strlen(message), 0,
+       (struct sockaddr *)&serverAddr, sizeof(serverAddr));
+```
+- **Propósito**: Envía un datagrama UDP a una dirección específica sin requerir una conexión previa
+- **Parámetros**:
+  - `sockfd`: Descriptor del socket
+  - `buf`: Buffer con los datos a enviar
+  - `len`: Número de bytes a enviar
+  - `flags`: Opciones adicionales, normalmente `0`
+  - `dest_addr`: Dirección de destino
+  - `addrlen`: Tamaño de la estructura de dirección
+- **Retorna**: Número de bytes enviados, o `-1` en error
+- **Uso en Lab**:
+  - `publisher_udp.c` envía publicaciones al broker
+  - `subscriber_udp.c` envía suscripciones al broker
+  - `broker_udp.c` reenvía publicaciones a los subscribers
+
+##### **`recvfrom(int sockfd, void *buf, size_t len, int flags, struct sockaddr *src_addr, socklen_t *addrlen)`**
+```c
+recvfrom(clientSocket, receivedMessage, sizeof(receivedMessage) - 1, 0,
+         (struct sockaddr *)&serverAddr, &serverLen);
+```
+- **Propósito**: Recibe un datagrama UDP e informa desde qué dirección fue enviado
+- **Parámetros**:
+  - `sockfd`: Descriptor del socket
+  - `buf`: Buffer donde guardar datos
+  - `len`: Tamaño máximo del buffer
+  - `flags`: Opciones adicionales, normalmente `0`
+  - `src_addr`: Estructura donde se almacena la dirección del emisor
+  - `addrlen`: Tamaño de la estructura de dirección
+- **Retorna**: Número de bytes recibidos, o `-1` en error
+- **Uso en Lab**:
+  - `broker_udp.c` recibe publicaciones y suscripciones
+  - `subscriber_udp.c` recibe mensajes reenviados por el broker
+
 ##### **`close(int fd)`**
 ```c
 close(socket);
@@ -212,6 +249,16 @@ printf("IP: %s\n", inet_ntoa(client_addr.sin_addr));
   - `in`: Estructura con dirección IP en formato binario
 - **Retorna**: Cadena con dirección IP (ej: "127.0.0.1")
 - **En el Lab**: Mostrar IP del cliente en mensajes del broker
+
+##### **`inet_addr(const char *cp)`**
+```c
+serverAddr.sin_addr.s_addr = inet_addr(serverName);
+```
+- **Propósito**: Convierte una dirección IPv4 en texto a formato binario
+- **Parámetros**:
+  - `cp`: Cadena con dirección IP (ej: "127.0.0.1")
+- **Retorna**: Dirección en formato de red
+- **En el Lab**: Configurar la IP del broker en `publisher_udp.c` y `subscriber_udp.c`
 
 ---
 
@@ -634,6 +681,93 @@ Los mensajes de diferentes matches aparecen **intercalados en tiempo real** seg�
 | ... | ... | ... | ... |
 | N | `match_{2N-1}_vs_{2N}` | 2N-1 | 2N |
 
+
+## Ejecución UDP
+
+Esta guía complementa la sección de ejecución existente y muestra cómo correr la versión UDP del laboratorio.
+
+### 1. Ir a la carpeta del proyecto UDP
+
+```bash
+cd ../Laboratorio3Redes/UDP
+```
+
+### 2. Compilar los programas UDP
+
+```bash
+gcc -Wall -Wextra -o broker_udp broker_udp.c
+gcc -Wall -Wextra -o publisher_udp publisher_udp.c
+gcc -Wall -Wextra -o subscriber_udp subscriber_udp.c
+```
+
+### 3. Ejecutar en múltiples terminales
+
+**Estructura recomendada:**
+- **Terminal 1**: broker UDP
+- **Terminal 2**: uno o más subscribers UDP
+- **Terminales siguientes**: uno o más publishers UDP
+
+### 4. Terminal 1: Broker UDP
+
+```bash
+./broker_udp 9001
+```
+
+### 5. Terminal 2: Subscriber UDP
+
+```bash
+./subscriber_udp 127.0.0.1 9001 sub1 2
+```
+
+**Formato:**
+
+```bash
+./subscriber_udp <broker_ip> <broker_port> <subscriber_name> <num_matches>
+```
+
+- `broker_ip`: IP del broker.
+- `broker_port`: puerto del broker.
+- `subscriber_name`: nombre del subscriber.
+- `num_matches`: cantidad de partidos a los que se suscribe automáticamente.
+
+**Ejemplo de tópicos generados para `num_matches = 2`:**
+- `match_1_vs_2`
+- `match_3_vs_4`
+
+### 6. Terminales siguientes: Publisher UDP
+
+```bash
+./publisher_udp 127.0.0.1 9001 pub1 1
+```
+
+**Formato:**
+
+```bash
+./publisher_udp <broker_ip> <broker_port> <publisher_name> <match_number>
+```
+
+- `broker_ip`: IP del broker.
+- `broker_port`: puerto del broker.
+- `publisher_name`: nombre del publisher.
+- `match_number`: número de partido que se desea publicar.
+
+**Relación entre número de partido y tópico:**
+- Partido `1` -> `match_1_vs_2`
+- Partido `2` -> `match_3_vs_4`
+- Partido `3` -> `match_5_vs_6`
+
+### 7. Orden recomendado
+
+1. Iniciar `broker_udp`.
+2. Iniciar uno o más `subscriber_udp`.
+3. Iniciar uno o más `publisher_udp`.
+
+### 8. Comportamiento esperado en UDP
+
+- El subscriber envía suscripciones con formato `SUBSCRIBE|topic`.
+- El publisher envía publicaciones con formato `PUBLISH|topic|contenido`.
+- El broker recibe ambos tipos de datagramas y reenvía cada publicación a los subscribers del tópico correspondiente.
+- Como UDP no establece conexión, no hay garantía de entrega, orden o retransmisión automática.
 
 
 ---
