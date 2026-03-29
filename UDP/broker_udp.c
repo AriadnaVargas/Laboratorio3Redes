@@ -7,13 +7,11 @@
 #include <stdlib.h>
 
 /**
- * broker_udp.c
  * Este programa representa al broker del sistema pub-sub por UDP.
  * Su trabajo es recibir suscripciones y publicaciones, guardar que
  * clientes estan suscritos a cada topic y reenviar cada publicacion
  * a los subscribers correspondientes.
  *
- * Secuencia de ejecucion de este programa:
  * 1. Lee el puerto desde consola o usa el puerto por defecto.
  * 2. Crea el socket UDP del broker.
  * 3. Hace bind() para quedar escuchando en ese puerto.

@@ -7,12 +7,10 @@
 #include <stdlib.h>
 
 /**
- * subscriber_udp.c
  * Este programa representa al subscriber del sistema pub-sub por UDP.
  * Su trabajo es suscribirse a uno o varios topics y luego quedarse
  * esperando los mensajes que el broker le reenvia.
  *
- * Secuencia de ejecucion de este programa:
  * 1. Lee ip, puerto, nombre y cantidad de partidos desde consola.
  * 2. Genera los topics a los que se va a suscribir.
  * 3. Crea el socket UDP del subscriber.

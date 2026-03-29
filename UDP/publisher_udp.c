@@ -7,12 +7,10 @@
 #include <stdlib.h>
 
 /**
- * publisher_udp.c
  * Este programa representa al publisher del sistema pub-sub por UDP.
  * Su trabajo es generar eventos de un partido especifico y enviarlos
  * al broker con el formato PUBLISH|topic|contenido.
  *
- * Secuencia de ejecucion de este programa:
  * 1. Lee ip, puerto, nombre y numero de partido desde consola.
  * 2. Calcula el topic del partido y los equipos correspondientes.
  * 3. Crea el socket UDP del publisher.
