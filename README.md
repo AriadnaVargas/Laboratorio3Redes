@@ -783,8 +783,3 @@ gcc -Wall -Wextra -o subscriber_udp subscriber_udp.c
 - RFC 768: UDP (User Datagram Protocol)
 - RFC 791: IP (Internet Protocol)
 
----
-
-**Autor**: Laboratorio de Redes - Universidad de los Andes
-**Fecha**: Marzo 2026
-**Estado**: ✅ TCP Multi-Match completado | UDP en desarrollo
