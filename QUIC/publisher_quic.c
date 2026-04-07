@@ -205,7 +205,7 @@ int main(int argc, char *argv[]) {
     printf("Tema:%s\n", topic);
     printf("Equipos:%d vs %d\n", team1, team2);
     printf("Broker:%s:%d\n", broker_ip, broker_port);
-    printf("Confiabilidad:ACKs + Retransmision (backoff x%d) + Seq numbers\n\n", 2);
+    printf("Confiabilidad:ACKs + Retransmision+ Seq numbers\n\n");
 
     //de nuevo el socket utiliza socket udp para el transporte
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -234,7 +234,9 @@ int main(int argc, char *argv[]) {
     printf("Template escogido: %d\n", indiceTemplateCorrespondiente);
     printf("Enviando %d mensajes en orden cronologico...\n\n", MSGS_POR_TEMPLATE);
 
-
+    int seEnviaronTodos = 0;
+    int numeroMensajesExitosos = 0;
+    int numeroFallos = 0;
     int contador;
     for (contador = 0; contador < MSGS_POR_TEMPLATE; contador++) {
         int seq = contador + 1;
@@ -259,9 +261,7 @@ int main(int argc, char *argv[]) {
 
         int envioExitosoAlBroker = enviarMensajeALBroker(sockfd, &puertoIpBroker,bufferMensaje, len,seq, pub_id);
 
-        int seEnviaronTodos = 0;
-        int numeroMensajesExitosos = 0;
-        int numeroFallos = 0;
+        
         if (envioExitosoAlBroker == 0) {
             numeroMensajesExitosos++;
         } else {

@@ -267,7 +267,7 @@ int main(int argc, char *argv[]) {
     estadoPartido partidos[MAX_PARTIDOS];
 
 
-    int i;
+    //int i;
     int j;
     for (i = 0; i < num_partidos; i++) {
         partidos[i].secuenciaEsperada = 1;
@@ -350,11 +350,11 @@ int main(int argc, char *argv[]) {
 
                 if (indiceTopic >= 0) {
 
-                    if (numeroSecuencia == expected_seq[indiceTopic]) {
+                    if (numeroSecuencia == partidos[indiceTopic].secuenciaEsperada) {
 
                         printf("[%s] (seq=%d) %s\n",
                                sub_id, numeroSecuencia, contenidoMensaje);
-                        expected_seq[indiceTopic]++;
+                        partidos[indiceTopic].secuenciaEsperada++;
 
 
                         int seAvanzo = 1;

@@ -783,3 +783,52 @@ gcc -Wall -Wextra -o subscriber_udp subscriber_udp.c
 - RFC 768: UDP (User Datagram Protocol)
 - RFC 791: IP (Internet Protocol)
 
+### Para mi bono de quic xd
+
+La ruta en mi compu (para pegarlo de una vez):
+
+cd /mnt/c/users/pc/desktop/redes3/laboratorio3redes/quic
+
+Para compilarlos:
+
+gcc -Wall -Wextra -pthread -o broker_tcp broker_tcp.c
+gcc -Wall -Wextra -o publisher_tcp publisher_tcp.c
+gcc -Wall -Wextra -o subscriber_tcp subscriber_tcp.c
+
+Para correr el broker:
+
+./broker_quic
+
+Para correr los suscriptores:
+
+./subscriber_quic 127.0.0.1 9003 sub1 2
+./subscriber_quic 127.0.0.1 9003 sub2 2
+
+Para correr los publicadores:
+
+./publisher_quic 127.0.0.1 9003 pub1 1
+./publisher_quic 127.0.0.1 9003 pub2 2
+
+O para que en realidad lo pueda ver en WireShark CAPTURANDO DESDE WSL:
+
+primero en una terminal cualqueira:
+
+sudo tcpdump -i any udp port 9003 -w quic_pubsub.pcap
+
+y luego en 5 terminales distintas:
+
+./broker_quic
+
+./subscriber_quic 172.24.254.165 9003 sub1 2
+
+./subscriber_quic 172.24.254.165 9003 sub2 2
+
+./publisher_quic 172.24.254.165 9003 pub1 1
+
+./publisher_quic 172.24.254.165 9003 pub2 2
+
+donde ese 172.24. bla bla sale de estar parado en wsl y poner:
+
+hostname -I
+
+y poner esa ip

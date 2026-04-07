@@ -17,7 +17,6 @@
 
 #define ACK_TIMEOUT_MS     600
 #define MAX_RETRIES        4
-#define BACKOFF_FACTOR     2
 
 
 typedef struct {
@@ -145,11 +144,12 @@ static int enviarMensajeASuscriptor(int numeroCorrespondienteBroker,
     int tiempoEspera = ACK_TIMEOUT_MS;
 
     int attempt;
+    informacionRelevanteSuscriptores copiaPrinteoTres = *dest;
+    const struct sockaddr *direccionGenerica = (const struct sockaddr *) &copiaPrinteoTres.ipPuertoSuscriptor;
+
     for (attempt = 0; attempt < MAX_RETRIES; attempt++) {
 
-        informacionRelevanteSuscriptores copiaPrinteoTres = *dest;
-        const struct sockaddr *direccionGenerica = (const struct sockaddr *) &copiaPrinteoTres.ipPuertoSuscriptor;
-
+        
         int exitoDelMensaje = sendto(numeroCorrespondienteBroker,
                                      mensajeAEnviar,
                                      longitudMensaje,
@@ -213,7 +213,7 @@ static int enviarMensajeASuscriptor(int numeroCorrespondienteBroker,
             }
         }
 
-        tiempoEspera = tiempoEspera * BACKOFF_FACTOR;
+        tiempoEspera = tiempoEspera;
     }
 
     fprintf(stderr, "[BROKER QUIC] Sin ACK tras %d intentos para '%s' seq=%d. "
@@ -272,8 +272,8 @@ int main(int argc, char *argv[]) {
 
     printf("===== BROKER QUIC HIBRIDO (UDP + Confiabilidad de aplicacion) =====\n");
     printf("Puerto: %d\n", puerto);
-    printf("ACK timeout: %d ms | Reintentos: %d | Backoff: x%d\n\n",
-           ACK_TIMEOUT_MS, MAX_RETRIES, BACKOFF_FACTOR);
+    printf("ACK timeout: %d ms | Reintentos: %d \n\n",
+           ACK_TIMEOUT_MS, MAX_RETRIES);
 
     //notemos que justamente el socket utiliza el sock_dgram que usamos en la implementación de UDP
     int socketUDP = socket(AF_INET, SOCK_DGRAM, 0);
